@@ -1,12 +1,19 @@
 import json
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 
-APP_DIR = Path(__file__).resolve().parent
+def app_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+APP_DIR = app_dir()
 PROFILES_DIR = APP_DIR / "profiles"
 SCRIPTS_DIR = APP_DIR / "scripts"
 DEFAULT_WORKDIR = str(Path.home() / "AIWorkspace")

@@ -1,20 +1,162 @@
-# MulCat 使用指南
+# MulCat 用户版使用指南
 
 MulCat 是一个 Windows 桌面启动器，用来管理和启动多个 Claude / Codex 命令行配置。
 
-它的核心思路是：
+普通用户不需要安装 Node.js，也不需要自己构建前端。请直接在 GitHub Release 页面下载已经打包好的 Windows 版本。
 
-- 在界面里维护结构化配置。
-- 保存配置后生成对应的 PowerShell 脚本。
-- 启动时实际运行生成的 `.ps1` 脚本。
-- API Key、Auth Token、Base URL 等信息只作为进程级环境变量传给当前启动的终端，不写入系统环境变量。
+## 下载与启动
 
-## 适用场景
+1. 打开本项目的 GitHub Release 页面。
+2. 下载最新版本的 Windows 压缩包，例如 `MulCat-windows.zip`。
+3. 解压到你希望存放软件的位置，例如：
 
-- 同时使用多个 Claude Code 账号或中转 API。
-- 同时使用多个 Codex provider / model / base_url。
-- 希望用图形界面快速选择配置并打开终端。
-- 希望保留 `.ps1` 脚本的可读性和可手动编辑能力。
+```text
+D:\Tools\MulCat
+```
+
+4. 在解压后的文件夹里双击运行：
+
+```text
+MulCat.exe
+```
+
+注意：请不要只复制单个 `MulCat.exe`。发布包中的 `_internal` 文件夹也必须和 `MulCat.exe` 放在一起。
+
+首次启动后，软件会在 `MulCat.exe` 同级目录创建本地运行数据目录：
+
+```text
+profiles/
+scripts/
+```
+
+这些目录用于保存你的个人配置和生成的 PowerShell 启动脚本。
+
+## 使用前准备
+
+MulCat 只是启动器，不会替你安装 Claude 或 Codex CLI。
+
+请先确保你已经安装并能在 PowerShell 中运行：
+
+```powershell
+claude
+```
+
+或：
+
+```powershell
+codex
+```
+
+推荐同时安装 Windows Terminal，这样 MulCat 可以在新的终端标签页中启动对应配置。
+
+## 创建 Claude 配置
+
+1. 打开 MulCat。
+2. 左侧选择 `Claude`。
+3. 点击右上角 `+`。
+4. 填写配置名称、工作目录、Base URL、Auth Token 和模型名称。
+5. 根据需要开启或关闭：
+   - `--dangerously-skip-permissions`
+   - `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`
+   - `CLAUDE_CODE_USE_POWERSHELL_TOOL`
+6. 点击 `保存并生成 PS1`。
+7. 回到配置列表，点击启动按钮。
+
+保存后，MulCat 会生成类似这样的脚本：
+
+```powershell
+$env:ANTHROPIC_BASE_URL = '...'
+$env:ANTHROPIC_AUTH_TOKEN = '...'
+$env:ANTHROPIC_MODEL = '...'
+
+claude '--dangerously-skip-permissions'
+```
+
+这些环境变量只作用于本次启动的进程，不会写入系统环境变量。
+
+## 创建 Codex 配置
+
+1. 打开 MulCat。
+2. 左侧选择 `Codex`。
+3. 点击右上角 `+`。
+4. 填写 API Key 环境变量名、API Key、Provider、Base URL、模型和 `wire_api`。
+5. 根据需要设置：
+   - `--ignore-user-config`
+   - `model_reasoning_effort`
+   - `disable_response_storage`
+   - `features.apps`
+6. 点击 `保存并生成 PS1`。
+7. 点击启动按钮。
+
+Codex 配置会生成环境变量和 `codex -c ...` 参数，例如：
+
+```powershell
+$env:CUSTOM_API_KEY = '...'
+
+codex `
+  '--ignore-user-config' `
+  '-c' `
+  'model_provider="custom"' `
+  '-c' `
+  'model="gpt-5"'
+```
+
+## 直接编辑 PS1
+
+每个配置卡片上都有一个脚本编辑按钮。
+
+点击后可以直接编辑对应的 `.ps1` 文件。这个功能适合临时调试、添加额外参数，或使用 MulCat 暂时还没有提供表单项的高级配置。
+
+注意：如果之后再次在配置弹窗中点击 `保存并生成 PS1`，MulCat 会根据 JSON 配置重新生成脚本，并覆盖你手动编辑的 `.ps1`。
+
+## 配置文件保存在哪里
+
+用户版会把你的真实配置保存在软件目录下：
+
+```text
+profiles/
+scripts/
+```
+
+其中：
+
+- `profiles/` 保存 JSON 配置。
+- `scripts/` 保存生成或手动编辑的 PowerShell 脚本。
+
+如果你想备份自己的配置，只需要备份这两个目录。
+
+## 隐私说明
+
+MulCat 发布包不包含任何个人 profile、script、API Key 或私有 Base URL。
+
+你的 API Key 和 Auth Token 只会保存在你本机的 `profiles/` 和 `scripts/` 目录中。请不要把这些文件提交到公开仓库，也不要在截图中泄露。
+
+## 常见问题
+
+### 双击后没有启动 Claude 或 Codex
+
+请先在普通 PowerShell 中测试：
+
+```powershell
+claude
+codex
+```
+
+如果命令不存在，说明对应 CLI 还没有安装或没有加入 PATH。
+
+### 启动后终端一闪而过
+
+检查生成的 `.ps1` 脚本内容，确认工作目录存在、Base URL 正确、Token 没有多余空格。
+
+### 如何迁移到另一台电脑
+
+1. 在新电脑下载 MulCat。
+2. 安装 Claude / Codex CLI。
+3. 复制旧电脑的 `profiles/` 和 `scripts/` 到新电脑的 MulCat 目录。
+
+# MulCat 开发者版使用指南
+
+如果你是开发者，想从源码运行或修改 MulCat，请使用下面的流程。
 
 ## 环境要求
 
@@ -23,12 +165,10 @@ MulCat 是一个 Windows 桌面启动器，用来管理和启动多个 Claude / 
 - Windows
 - Python 3.10 或更高版本
 - Node.js 18 或更高版本
-- Windows Terminal，推荐安装，用于打开新的终端标签页
+- Windows Terminal，推荐安装
 - 已安装并可在命令行中运行的 `claude` 或 `codex`
 
-## 快速开始
-
-首次使用时，在项目目录中安装依赖并构建前端：
+## 从源码运行
 
 ```powershell
 cd D:\path\to\MulCat
@@ -38,105 +178,57 @@ cd desktop_ui
 npm install
 npm run build
 cd ..
+
+python desktop_client.py
 ```
 
-然后启动桌面端：
+也可以运行：
 
 ```powershell
 .\start_desktop_client.bat
 ```
 
-如果启动失败或窗口闪退，可以运行调试版本：
+仓库同时提供了 `requirement.txt` 作为兼容文件，内容与 `requirements.txt` 一致。
+
+## 开发前端
+
+启动 Vite 开发服务器：
 
 ```powershell
-.\start_desktop_client_debug.bat
+cd desktop_ui
+npm run dev
 ```
 
-## 创建配置
+然后在另一个 PowerShell 中运行：
 
-打开 MulCat 后：
+```powershell
+cd D:\path\to\MulCat
+$env:MULCAT_UI_DEV_URL = "http://127.0.0.1:5173"
+python desktop_client.py
+```
 
-1. 在左侧选择 `Claude` 或 `Codex`。
-2. 点击右上角的 `+` 创建新配置。
-3. 填写名称、工作目录、Base URL、模型和 Key 等信息。
-4. 点击 `保存并生成 PS1`。
-5. 在配置卡片上点击启动按钮。
+## 打包说明
 
-保存后，MulCat 会把 JSON 配置写入：
+普通用户建议使用 Release 中已经打包好的版本。
+
+开发者如果需要自行打包，需要先构建前端，再使用 PyInstaller：
+
+```powershell
+cd desktop_ui
+npm install
+npm run build
+cd ..
+
+pyinstaller --noconfirm --clean --windowed --name MulCat --add-data "desktop_ui/dist;desktop_ui/dist" desktop_client.py
+```
+
+打包结果会出现在：
 
 ```text
-profiles/
+dist/MulCat/MulCat.exe
 ```
 
-并生成实际运行的 PowerShell 脚本：
-
-```text
-scripts/
-```
-
-## Claude 配置说明
-
-Claude 配置主要会生成这些环境变量：
-
-```text
-ANTHROPIC_BASE_URL
-ANTHROPIC_AUTH_TOKEN
-ANTHROPIC_MODEL
-ANTHROPIC_DEFAULT_SONNET_MODEL
-ANTHROPIC_DEFAULT_OPUS_MODEL
-ANTHROPIC_DEFAULT_HAIKU_MODEL
-API_TIMEOUT_MS
-CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
-CLAUDE_CODE_USE_POWERSHELL_TOOL
-```
-
-如果开启 `--dangerously-skip-permissions`，生成脚本会在启动 Claude 时附加该参数。
-
-## Codex 配置说明
-
-Codex 配置由两部分组成：
-
-- API Key 环境变量，例如 `CUSTOM_API_KEY`
-- `codex -c ...` 参数，例如 `model_provider`、`model`、`base_url`、`wire_api`
-
-常见配置项包括：
-
-```text
---ignore-user-config
-model_provider
-model
-model_reasoning_effort
-disable_response_storage
-features.apps
-model_providers.<provider>.base_url
-model_providers.<provider>.env_key
-model_providers.<provider>.wire_api
-```
-
-## 直接编辑 PS1
-
-每个配置卡片上都有一个脚本编辑按钮。
-
-点击后可以直接编辑对应的 `.ps1` 文件。这个功能适合临时调试或添加高级启动参数。
-
-注意：如果之后再次在配置弹窗中点击 `保存并生成 PS1`，MulCat 会根据 JSON 配置重新生成脚本，并覆盖你手动编辑的 `.ps1`。
-
-## 示例配置
-
-示例文件放在：
-
-```text
-examples/
-```
-
-你可以参考示例创建自己的配置。真实配置请放在：
-
-```text
-profiles/
-scripts/
-```
-
-## 隐私与 Git 提交
+## Git 与本地配置
 
 `profiles/` 和 `scripts/` 是本地运行数据目录。
 
@@ -146,74 +238,10 @@ scripts/
 - `scripts/` 中真实 PS1 不会进入 Git。
 - 只保留 `.gitkeep` 来维持目录结构。
 
+示例文件放在：
+
+```text
+examples/
+```
+
 请不要使用 `git add -f profiles/...` 或 `git add -f scripts/...` 强制提交真实配置。
-
-## 常用命令
-
-安装 Python 依赖：
-
-```powershell
-pip install -r requirements.txt
-```
-
-仓库同时提供了 `requirement.txt` 作为兼容文件，内容与 `requirements.txt` 一致。
-
-安装前端依赖：
-
-```powershell
-cd desktop_ui
-npm install
-```
-
-构建前端：
-
-```powershell
-npm run build
-```
-
-启动桌面端：
-
-```powershell
-cd ..
-python desktop_client.py
-```
-
-或者：
-
-```powershell
-.\start_desktop_client.bat
-```
-
-## 常见问题
-
-### 打开后是黑屏
-
-请确认已经执行：
-
-```powershell
-cd desktop_ui
-npm run build
-```
-
-如果仍然黑屏，请运行：
-
-```powershell
-.\start_desktop_client_debug.bat
-```
-
-查看控制台输出。
-
-### 点击启动没有反应
-
-请确认：
-
-- `claude` 或 `codex` 已经安装。
-- 在普通 PowerShell 中可以直接运行 `claude` 或 `codex`。
-- Windows Terminal 可用。
-- 配置里的工作目录存在。
-
-### GitHub 会不会上传我的 Key
-
-默认不会。真实配置文件和生成脚本都在 `.gitignore` 中。
-
-但不要强制添加这些文件，也不要把真实 Key 写入 README、issue、截图或示例文件。
