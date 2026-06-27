@@ -1,8 +1,14 @@
-# Local secrets. Keep only placeholder examples tracked.
-profiles/**/*.json
-scripts/**/*.ps1
-!profiles/**/example*.json
-!scripts/**/example*.ps1
+# Local runtime data. Keep the directory shape, ignore all real files.
+profiles/**
+scripts/**
+!profiles/
+!profiles/claude/
+!profiles/codex/
+!profiles/**/.gitkeep
+!scripts/
+!scripts/claude/
+!scripts/codex/
+!scripts/**/.gitkeep
 
 # Runtime logs and local caches
 *.log
@@ -26,4 +32,3 @@ dist/
 Thumbs.db
 .idea/
 .vscode/
-

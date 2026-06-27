@@ -15,7 +15,9 @@ profiles/                      local JSON profiles
 scripts/                       generated or hand-edited PowerShell launch scripts
 ```
 
-`profiles/` and `scripts/` are part of the runtime structure. Only placeholder example files are tracked by git. Your real local profiles and scripts should stay untracked.
+`profiles/` and `scripts/` are part of the runtime structure. Git tracks only `.gitkeep` files in those folders; every real profile JSON and generated PS1 script stays local.
+
+Examples live under `examples/`.
 
 ## Development
 
@@ -37,5 +39,8 @@ You can also run:
 
 Do not commit real API keys, auth tokens, private base URLs, generated scripts, logs, or local build output.
 
-If you copy an example profile, rename it to something other than `example*.json`; `.gitignore` will keep it local.
+Copy examples from `examples/` into `profiles/` or `scripts/` for local use. Files created there are ignored by git.
 
+## Maintenance
+
+The private working project `MultiCaat` and public release project `MulCat` should receive the same application logic changes. Runtime data is not shared: profile JSON files and PS1 scripts created in `MultiCaat` must never be copied or committed to `MulCat`.
