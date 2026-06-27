@@ -1,0 +1,29 @@
+{
+  "id": "example-codex",
+  "name": "Codex Example",
+  "kind": "codex",
+  "enabled": true,
+  "workingDirectory": "D:\\AIWorkspace",
+  "terminal": {
+    "mode": "windows-terminal",
+    "keepOpen": true
+  },
+  "config": {
+    "ignoreUserConfig": true,
+    "apiKeyEnvName": "CUSTOM_API_KEY",
+    "apiKey": "YOUR_CUSTOM_API_KEY_HERE",
+    "provider": {
+      "id": "custom",
+      "name": "Custom Provider",
+      "baseUrl": "https://example.com",
+      "wireApi": "responses"
+    },
+    "model": "gpt-5",
+    "reasoningEffort": "high",
+    "disableResponseStorage": true,
+    "appsEnabled": false,
+    "extraEnv": {},
+    "extraConfig": {},
+    "extraArgs": []
+  }
+}

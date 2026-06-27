@@ -1,0 +1,29 @@
+# Local secrets. Keep only placeholder examples tracked.
+profiles/**/*.json
+scripts/**/*.ps1
+!profiles/**/example*.json
+!scripts/**/example*.ps1
+
+# Runtime logs and local caches
+*.log
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Frontend dependencies and build output
+desktop_ui/node_modules/
+desktop_ui/dist/
+
+# Python environments and packaging output
+.venv/
+venv/
+build/
+dist/
+*.spec
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+

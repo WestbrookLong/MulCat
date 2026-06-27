@@ -1,0 +1,25 @@
+{
+  "id": "example-claude",
+  "name": "Claude Example",
+  "kind": "claude",
+  "enabled": true,
+  "workingDirectory": "D:\\AIWorkspace",
+  "terminal": {
+    "mode": "windows-terminal",
+    "keepOpen": true
+  },
+  "config": {
+    "baseUrl": "https://example.com/anthropic",
+    "authToken": "YOUR_ANTHROPIC_TOKEN_HERE",
+    "model": "sonnet",
+    "sonnetModel": "sonnet",
+    "opusModel": "sonnet",
+    "haikuModel": "sonnet",
+    "timeoutMs": 3000000,
+    "disableNonessentialTraffic": true,
+    "usePowershellTool": true,
+    "skipPermissions": true,
+    "extraEnv": {},
+    "extraArgs": []
+  }
+}
