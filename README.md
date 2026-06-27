@@ -2,27 +2,24 @@
 
 MulCat 是一个 Windows 桌面启动器，用来管理和启动多个 Claude / Codex 命令行配置。
 
-普通用户不需要安装 Node.js，也不需要自己构建前端。请直接在 GitHub Release 页面下载已经打包好的 Windows 版本。
+普通用户不需要安装 Python、Node.js，也不需要自己构建前端。请直接在 GitHub Release 页面下载已经打包好的 Windows 安装包。
 
 ## 下载与启动
 
 1. 打开本项目的 GitHub Release 页面。
-2. 下载最新版本的 Windows 压缩包，例如 `MulCat-windows.zip`。
-3. 解压到你希望存放软件的位置，例如：
+2. 下载最新版本的 Windows 安装包，例如 `MulCatSetup.exe`。
+3. 双击安装包，按提示完成安装。
+4. 安装完成后，从开始菜单或桌面快捷方式启动 `MulCat`。
 
-```text
-D:\Tools\MulCat
-```
-
-4. 在解压后的文件夹里双击运行：
+如果你下载的是便携版压缩包 `MulCat-windows.zip`，请先解压，然后在解压后的文件夹里双击运行：
 
 ```text
 MulCat.exe
 ```
 
-注意：请不要只复制单个 `MulCat.exe`。发布包中的 `_internal` 文件夹也必须和 `MulCat.exe` 放在一起。
+便携版注意：请不要只复制单个 `MulCat.exe`。发布包中的 `_internal` 文件夹也必须和 `MulCat.exe` 放在一起。
 
-首次启动后，软件会在 `MulCat.exe` 同级目录创建本地运行数据目录：
+首次启动后，软件会在安装目录或便携版目录中创建本地运行数据目录：
 
 ```text
 profiles/
@@ -111,7 +108,7 @@ codex `
 
 ## 配置文件保存在哪里
 
-用户版会把你的真实配置保存在软件目录下：
+用户版会把你的真实配置保存在安装目录或便携版目录下：
 
 ```text
 profiles/
@@ -150,7 +147,7 @@ codex
 
 ### 如何迁移到另一台电脑
 
-1. 在新电脑下载 MulCat。
+1. 在新电脑下载并安装 MulCat。
 2. 安装 Claude / Codex CLI。
 3. 复制旧电脑的 `profiles/` 和 `scripts/` 到新电脑的 MulCat 目录。
 

@@ -12,6 +12,7 @@ scripts/**
 
 # Runtime logs and local caches
 *.log
+.cache/
 __pycache__/
 *.py[cod]
 .pytest_cache/
