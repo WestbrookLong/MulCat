@@ -277,7 +277,7 @@ function App() {
               <button
                 type="button"
                 onClick={newProfile}
-                className="grid h-9 w-9 place-items-center border border-zinc-700 bg-black text-zinc-200 transition hover:border-white hover:text-white"
+                className="grid h-9 w-9 place-items-center rounded-sm border border-zinc-700 bg-black text-zinc-200 transition hover:border-white hover:text-white"
                 title={`新增 ${filter === "claude" ? "Claude" : "Codex"} 配置`}
               >
                 <Plus size={17} />
@@ -350,7 +350,7 @@ function ProviderModal({ providers, onSelect, onClose }) {
             key={provider.id}
             type="button"
             onClick={() => onSelect(provider)}
-            className="border border-zinc-800 bg-zinc-950 p-4 text-left transition hover:border-white"
+            className="rounded-md border border-zinc-800 bg-zinc-950 p-4 text-left transition hover:border-white"
           >
             <div className="text-sm font-semibold text-white">{provider.name}</div>
             <div className="mt-2 text-xs leading-5 text-zinc-400">{provider.description}</div>
@@ -401,7 +401,7 @@ function ConfigModal({ draft, setDraft, chooseDirectory, onClose, onSave, onDele
       </div>
 
       <div className="mt-5 flex items-center justify-between border-t border-zinc-800 pt-4">
-        <button onClick={onDelete} className="inline-flex h-9 items-center gap-2 border border-zinc-700 bg-black px-3 text-sm text-zinc-300 transition hover:border-white hover:text-white">
+        <button onClick={onDelete} className="inline-flex h-9 items-center gap-2 rounded-sm border border-zinc-700 bg-black px-3 text-sm text-zinc-300 transition hover:border-white hover:text-white">
           <Trash2 size={15} />
           删除
         </button>
@@ -422,7 +422,7 @@ function ScriptModal({ path, text, setText, onClose, onSave }) {
         value={text}
         onChange={(event) => setText(event.target.value)}
         spellCheck={false}
-        className="h-[58vh] w-full resize-none border border-zinc-700 bg-black px-3 py-3 font-mono text-xs leading-5 text-white outline-none transition focus:border-white"
+        className="h-[58vh] w-full resize-none rounded-sm border border-zinc-700 bg-black px-3 py-3 font-mono text-xs leading-5 text-white outline-none transition focus:border-white"
       />
       <div className="mt-4 flex justify-end gap-2 border-t border-zinc-800 pt-4">
         <ActionButton icon={X} label="取消" onClick={onClose} />
@@ -464,7 +464,7 @@ function AdvancedClaudePanel({ config, set }) {
   const [open, setOpen] = React.useState(false);
   const a = config.advanced;
   return (
-    <section className="border border-zinc-800 bg-zinc-950">
+    <section className="rounded-md border border-zinc-800 bg-zinc-950">
       <button type="button" onClick={() => setOpen((value) => !value)} className="flex w-full items-center justify-between border-b border-zinc-800 px-4 py-2 text-left">
         <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">高级设置</span>
         {open ? <ChevronDown size={15} className="text-zinc-400" /> : <ChevronRight size={15} className="text-zinc-400" />}
@@ -523,10 +523,10 @@ function CodexEditor({ draft, set }) {
 function ProfileCard({ profile, active, onSelect, onLaunch, onScript, onDuplicate }) {
   const Icon = profile.kind === "claude" ? Bot : TerminalSquare;
   return (
-    <article className={`border p-4 transition ${active ? "border-white bg-zinc-900" : "border-zinc-800 bg-black hover:border-zinc-500"}`}>
+    <article className={`rounded-lg border p-4 transition ${active ? "border-white bg-zinc-900" : "border-zinc-800 bg-black hover:border-zinc-500"}`}>
       <button type="button" onClick={onSelect} className="block w-full text-left">
         <div className="flex items-start gap-3">
-          <div className="grid h-9 w-9 shrink-0 place-items-center border border-zinc-700 bg-zinc-950">
+          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-zinc-700 bg-zinc-950">
             <Icon size={17} className="text-zinc-200" />
           </div>
           <div className="min-w-0">
@@ -549,10 +549,10 @@ function Modal({ title, onClose, children, wide, compact }) {
   const width = compact ? "max-w-lg" : wide ? "max-w-5xl" : "max-w-4xl";
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 px-5 py-5">
-      <div className={`max-h-full w-full border border-zinc-700 bg-black shadow-2xl ${width}`}>
+      <div className={`max-h-full w-full rounded-xl border border-zinc-700 bg-black shadow-2xl ${width}`}>
         <div className="flex h-12 items-center justify-between border-b border-zinc-800 px-4">
           <div className="truncate text-sm font-semibold text-white">{title}</div>
-          <button onClick={onClose} className="grid h-8 w-8 place-items-center border border-zinc-700 text-zinc-300 hover:border-white hover:text-white" title="关闭">
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-sm border border-zinc-700 text-zinc-300 hover:border-white hover:text-white" title="关闭">
             <X size={16} />
           </button>
         </div>
@@ -564,7 +564,7 @@ function Modal({ title, onClose, children, wide, compact }) {
 
 function Panel({ title, children }) {
   return (
-    <section className="border border-zinc-800 bg-zinc-950">
+    <section className="rounded-md border border-zinc-800 bg-zinc-950">
       <div className="border-b border-zinc-800 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">{title}</div>
       <div className="p-4">{children}</div>
     </section>
@@ -575,7 +575,7 @@ function Field({ label, value, onChange, readOnly, wide, actionIcon: ActionIcon,
   return (
     <label className={wide ? "col-span-2 block" : "block"}>
       <span className="mb-1 block text-xs text-zinc-400">{label}</span>
-      <div className="flex h-9 border border-zinc-700 bg-black transition focus-within:border-white">
+      <div className="flex h-9 rounded-sm border border-zinc-700 bg-black transition focus-within:border-white">
         <input
           type="text"
           value={value ?? ""}
@@ -598,7 +598,7 @@ function SecretField({ label, value, onChange, wide }) {
   return (
     <label className={wide ? "col-span-2 block" : "block"}>
       <span className="mb-1 block text-xs text-zinc-400">{label}</span>
-      <div className="flex h-9 border border-zinc-700 bg-black transition focus-within:border-white">
+      <div className="flex h-9 rounded-sm border border-zinc-700 bg-black transition focus-within:border-white">
         <input
           type={visible ? "text" : "password"}
           value={value ?? ""}
@@ -620,7 +620,7 @@ function SelectField({ label, value, options, onChange }) {
       <select
         value={value ?? ""}
         onChange={(event) => onChange(event.target.value)}
-        className="h-9 w-full border border-zinc-700 bg-black px-3 text-sm text-white outline-none transition focus:border-white"
+        className="h-9 w-full rounded-sm border border-zinc-700 bg-black px-3 text-sm text-white outline-none transition focus:border-white"
       >
         {options.map((option) => (
           <option key={option} value={option}>
@@ -634,7 +634,7 @@ function SelectField({ label, value, options, onChange }) {
 
 function Toggle({ label, checked, onChange }) {
   return (
-    <label className="flex h-9 items-center justify-between gap-3 border border-zinc-700 bg-black px-3">
+    <label className="flex h-9 items-center justify-between gap-3 rounded-sm border border-zinc-700 bg-black px-3">
       <span className="truncate text-sm text-zinc-300">{label}</span>
       <input type="checkbox" checked={!!checked} onChange={(event) => onChange(event.target.checked)} className="h-4 w-4 shrink-0 accent-white" />
     </label>
@@ -660,7 +660,7 @@ function JsonField({ label, value, onChange }) {
         }}
         rows={5}
         spellCheck={false}
-        className="w-full resize-y border border-zinc-700 bg-black px-3 py-2 font-mono text-xs leading-5 text-white outline-none transition focus:border-white"
+        className="w-full resize-y rounded-sm border border-zinc-700 bg-black px-3 py-2 font-mono text-xs leading-5 text-white outline-none transition focus:border-white"
       />
     </label>
   );
@@ -673,7 +673,7 @@ function ArrayField({ label, value, onChange }) {
       <input
         value={(value || []).join(" ")}
         onChange={(event) => onChange(event.target.value.split(" ").map((x) => x.trim()).filter(Boolean))}
-        className="h-9 w-full border border-zinc-700 bg-black px-3 font-mono text-xs text-white outline-none transition focus:border-white"
+        className="h-9 w-full rounded-sm border border-zinc-700 bg-black px-3 font-mono text-xs text-white outline-none transition focus:border-white"
       />
     </label>
   );
@@ -683,7 +683,7 @@ function FilterButton({ active, icon: Icon, label, count, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`flex h-10 w-full items-center justify-between border px-3 text-sm transition ${
+      className={`flex h-10 w-full items-center justify-between rounded-sm border px-3 text-sm transition ${
         active ? "border-white bg-zinc-900 text-white" : "border-transparent text-zinc-400 hover:bg-zinc-900 hover:text-white"
       }`}
     >
@@ -698,7 +698,7 @@ function FilterButton({ active, icon: Icon, label, count, onClick }) {
 
 function IconButton({ icon: Icon, label, onClick }) {
   return (
-    <button onClick={onClick} className="mb-2 flex h-9 w-full items-center gap-2 border border-zinc-700 bg-black px-3 text-sm text-zinc-300 transition hover:border-white hover:text-white">
+    <button onClick={onClick} className="mb-2 flex h-9 w-full items-center gap-2 rounded-sm border border-zinc-700 bg-black px-3 text-sm text-zinc-300 transition hover:border-white hover:text-white">
       <Icon size={15} />
       {label}
     </button>
@@ -713,7 +713,7 @@ function SmallIconButton({ icon: Icon, title, onClick, strong }) {
         event.stopPropagation();
         onClick();
       }}
-      className={`grid h-8 w-8 place-items-center border transition ${
+      className={`grid h-8 w-8 place-items-center rounded-sm border transition ${
         strong ? "border-white bg-white text-black hover:bg-zinc-200" : "border-zinc-700 bg-black text-zinc-300 hover:border-white hover:text-white"
       }`}
       title={title}
@@ -728,7 +728,7 @@ function ActionButton({ icon: Icon, label, onClick, disabled, primary }) {
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex h-9 items-center gap-2 border px-3 text-sm transition disabled:cursor-not-allowed disabled:opacity-45 ${
+      className={`inline-flex h-9 items-center gap-2 rounded-sm border px-3 text-sm transition disabled:cursor-not-allowed disabled:opacity-45 ${
         primary ? "border-white bg-white text-black hover:bg-zinc-200" : "border-zinc-700 bg-black text-zinc-300 hover:border-white hover:text-white"
       }`}
     >
