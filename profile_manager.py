@@ -70,7 +70,7 @@ def load_profiles() -> list[dict[str, Any]]:
     for kind in ("claude", "codex"):
         for path in sorted((PROFILES_DIR / kind).glob("*.json")):
             with path.open("r", encoding="utf-8") as handle:
-                profile = json.load(handle)
+                profile = normalize_profile(json.load(handle))
             profile["_jsonPath"] = str(path)
             profile["_scriptPath"] = str(script_path(profile["kind"], profile["id"]))
             profiles.append(profile)
@@ -103,6 +103,7 @@ def normalize_profile(profile: dict[str, Any]) -> dict[str, Any]:
         "id": profile_id,
         "name": name,
         "kind": kind,
+        "provider": str(profile.get("provider") or ""),
         "enabled": bool(profile.get("enabled", True)),
         "workingDirectory": working_directory,
         "terminal": profile.get("terminal") or {"mode": "windows-terminal", "keepOpen": True},
@@ -116,20 +117,42 @@ def normalize_profile(profile: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_claude_config(config: dict[str, Any]) -> dict[str, Any]:
-    model = str(config.get("model") or "sonnet")
+    models = dict(config.get("models") or {})
+    launch = dict(config.get("launch") or {})
+    advanced = dict(config.get("advanced") or {})
+
+    old_model = str(config.get("model") or "")
+    old_sonnet = str(config.get("sonnetModel") or "")
+    old_opus = str(config.get("opusModel") or "")
+    old_haiku = str(config.get("haikuModel") or "")
+    if "models" not in config and {old_model, old_sonnet, old_opus, old_haiku} == {"sonnet"}:
+        old_model = old_sonnet = old_opus = old_haiku = ""
+
     return {
         "baseUrl": str(config.get("baseUrl") or ""),
         "authToken": str(config.get("authToken") or ""),
-        "model": model,
-        "sonnetModel": str(config.get("sonnetModel") or model),
-        "opusModel": str(config.get("opusModel") or model),
-        "haikuModel": str(config.get("haikuModel") or model),
-        "timeoutMs": int(config.get("timeoutMs") or 3000000),
-        "disableNonessentialTraffic": bool(config.get("disableNonessentialTraffic", True)),
-        "usePowershellTool": bool(config.get("usePowershellTool", True)),
-        "skipPermissions": bool(config.get("skipPermissions", True)),
-        "extraEnv": dict(config.get("extraEnv") or {}),
-        "extraArgs": list(config.get("extraArgs") or []),
+        "models": {
+            "main": str(models.get("main") or old_model),
+            "sonnet": str(models.get("sonnet") or old_sonnet),
+            "opus": str(models.get("opus") or old_opus),
+            "haiku": str(models.get("haiku") or old_haiku),
+        },
+        "launch": {
+            "settingSources": str(launch.get("settingSources") or config.get("settingSources") or "local"),
+            "dangerouslySkipPermissions": bool(launch.get("dangerouslySkipPermissions", config.get("skipPermissions", True))),
+            "extraArgs": list(launch.get("extraArgs") or config.get("extraArgs") or []),
+        },
+        "advanced": {
+            "apiTimeoutMs": str(advanced.get("apiTimeoutMs") or config.get("timeoutMs") or "3000000"),
+            "usePowershellTool": bool(advanced.get("usePowershellTool", config.get("usePowershellTool", True))),
+            "disableNonessentialTraffic": bool(advanced.get("disableNonessentialTraffic", config.get("disableNonessentialTraffic", True))),
+            "disableTelemetry": bool(advanced.get("disableTelemetry", config.get("disableTelemetry", False))),
+            "disableAutoUpdater": bool(advanced.get("disableAutoUpdater", config.get("disableAutoUpdater", False))),
+            "bashDefaultTimeoutMs": str(advanced.get("bashDefaultTimeoutMs") or ""),
+            "bashMaxTimeoutMs": str(advanced.get("bashMaxTimeoutMs") or ""),
+            "bashMaxOutputLength": str(advanced.get("bashMaxOutputLength") or ""),
+            "extraEnv": dict(advanced.get("extraEnv") or config.get("extraEnv") or {}),
+        },
     }
 
 
@@ -176,26 +199,58 @@ def generate_script(profile: dict[str, Any]) -> Path:
 
 def generate_claude_script(profile: dict[str, Any]) -> str:
     config = profile["config"]
-    env = {
-        "ANTHROPIC_BASE_URL": config["baseUrl"],
-        "ANTHROPIC_AUTH_TOKEN": config["authToken"],
-        "ANTHROPIC_MODEL": config["model"],
-        "ANTHROPIC_DEFAULT_SONNET_MODEL": config["sonnetModel"],
-        "ANTHROPIC_DEFAULT_OPUS_MODEL": config["opusModel"],
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL": config["haikuModel"],
-        "API_TIMEOUT_MS": str(config["timeoutMs"]),
-        **{str(k): str(v) for k, v in config.get("extraEnv", {}).items()},
-    }
-    if config["disableNonessentialTraffic"]:
-        env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
-    if config["usePowershellTool"]:
-        env["CLAUDE_CODE_USE_POWERSHELL_TOOL"] = "1"
+    models = config.get("models", {})
+    launch = config.get("launch", {})
+    advanced = config.get("advanced", {})
 
-    args = ["--dangerously-skip-permissions"] if config["skipPermissions"] else []
-    args.extend(str(arg) for arg in config.get("extraArgs", []))
-    lines = script_header(profile)
-    lines.extend(env_lines(env))
-    command = "claude" + ps_args(args)
+    lines = claude_script_header(profile)
+    lines.extend(
+        env_lines(
+            {
+                "ANTHROPIC_AUTH_TOKEN": config["authToken"],
+                "ANTHROPIC_BASE_URL": config["baseUrl"],
+            },
+            quote=ps_double_quote,
+        )
+    )
+
+    model_env = {
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": models.get("haiku", ""),
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": models.get("opus", ""),
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": models.get("sonnet", ""),
+        "ANTHROPIC_MODEL": models.get("main", ""),
+    }
+    if any(str(value) for value in model_env.values()):
+        lines.extend(env_lines(model_env, quote=ps_double_quote))
+
+    advanced_env = {
+        "API_TIMEOUT_MS": advanced.get("apiTimeoutMs", ""),
+    }
+    if advanced.get("disableNonessentialTraffic"):
+        advanced_env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+    if advanced.get("usePowershellTool"):
+        advanced_env["CLAUDE_CODE_USE_POWERSHELL_TOOL"] = "1"
+    if advanced.get("disableTelemetry"):
+        advanced_env["CLAUDE_CODE_DISABLE_TELEMETRY"] = "1"
+    if advanced.get("disableAutoUpdater"):
+        advanced_env["CLAUDE_CODE_DISABLE_AUTOUPDATER"] = "1"
+    advanced_env.update(
+        {
+            "BASH_DEFAULT_TIMEOUT_MS": advanced.get("bashDefaultTimeoutMs", ""),
+            "BASH_MAX_TIMEOUT_MS": advanced.get("bashMaxTimeoutMs", ""),
+            "BASH_MAX_OUTPUT_LENGTH": advanced.get("bashMaxOutputLength", ""),
+        }
+    )
+    advanced_env.update({str(k): str(v) for k, v in advanced.get("extraEnv", {}).items()})
+    lines.extend(env_lines(advanced_env, quote=ps_double_quote))
+
+    args = []
+    if launch.get("settingSources"):
+        args.extend(["--setting-sources", str(launch["settingSources"])])
+    if launch.get("dangerouslySkipPermissions"):
+        args.append("--dangerously-skip-permissions")
+    args.extend(str(arg) for arg in launch.get("extraArgs", []))
+    command = "claude" + ps_args(args, quote=ps_arg_quote)
     lines.append(command)
     return "\n".join(lines) + "\n"
 
@@ -233,6 +288,14 @@ def generate_codex_script(profile: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def claude_script_header(profile: dict[str, Any]) -> list[str]:
+    return [
+        f"# Generated by MulCat from profiles/{profile['kind']}/{profile['id']}.json",
+        f"cd {ps_double_quote(profile['workingDirectory'])}",
+        "",
+    ]
+
+
 def script_header(profile: dict[str, Any]) -> list[str]:
     return [
         f"# Generated by MulCat from profiles/{profile['kind']}/{profile['id']}.json",
@@ -242,11 +305,13 @@ def script_header(profile: dict[str, Any]) -> list[str]:
     ]
 
 
-def env_lines(env: dict[str, str]) -> list[str]:
+def env_lines(env: dict[str, str], quote=None) -> list[str]:
+    if quote is None:
+        quote = ps_quote
     lines = []
     for key, value in env.items():
         if value != "":
-            lines.append(f"$env:{key} = {ps_quote(value)}")
+            lines.append(f"$env:{key} = {quote(value)}")
     lines.append("")
     return lines
 
@@ -255,10 +320,21 @@ def ps_quote(value: Any) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def ps_args(args: list[str]) -> str:
+def ps_double_quote(value: Any) -> str:
+    return '"' + str(value).replace("`", "``").replace('"', '`"') + '"'
+
+
+def ps_arg_quote(value: Any) -> str:
+    text = str(value)
+    if text and all(ch not in text for ch in " \t\r\n\"'`"):
+        return text
+    return ps_double_quote(text)
+
+
+def ps_args(args: list[str], quote=ps_quote) -> str:
     if not args:
         return ""
-    return " " + " ".join(ps_quote(arg) for arg in args)
+    return " " + " ".join(quote(arg) for arg in args)
 
 
 def ps_multiline_command(parts: list[str]) -> str:

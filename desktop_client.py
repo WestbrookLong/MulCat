@@ -120,6 +120,21 @@ class DesktopApi:
         os.startfile(str(SCRIPTS_DIR))
         return self._state()
 
+    def choose_directory(self, initial_directory: str = "") -> dict:
+        with self.lock:
+            try:
+                if self._window is None:
+                    self.last_message = "Window is not ready."
+                    return {**self._state(), "selectedDirectory": ""}
+                file_dialog = getattr(webview, "FileDialog", None)
+                dialog_type = file_dialog.FOLDER if file_dialog is not None else webview.FOLDER_DIALOG
+                paths = self._window.create_file_dialog(dialog_type, directory=str(initial_directory or APP_DIR))
+                selected = paths[0] if paths else ""
+                return {**self._state(), "selectedDirectory": selected}
+            except Exception as exc:
+                self.last_message = f"Choose directory failed: {exc}"
+                return {**self._state(), "selectedDirectory": ""}
+
     def minimize_window(self) -> dict:
         if self._window is not None:
             self._window.minimize()
