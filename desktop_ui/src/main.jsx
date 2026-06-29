@@ -362,6 +362,29 @@ function ProviderModal({ providers, onSelect, onClose }) {
   );
 }
 
+function SectionHeader({ label }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-zinc-400">{label}</span>
+      <div className="h-px flex-1 bg-zinc-800" />
+    </div>
+  );
+}
+
+function CollapsibleSection({ label, children }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <div>
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-3 py-1 text-left">
+        <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-zinc-400">{label}</span>
+        <div className="h-px flex-1 bg-zinc-800" />
+        {open ? <ChevronDown size={15} className="shrink-0 text-zinc-400" /> : <ChevronRight size={15} className="shrink-0 text-zinc-400" />}
+      </button>
+      {open && <div className="space-y-4 pb-2 pt-3">{children}</div>}
+    </div>
+  );
+}
+
 function ConfigModal({ draft, setDraft, chooseDirectory, onClose, onSave, onDelete }) {
   const set = (path, value) => {
     setDraft((current) => {
@@ -375,26 +398,23 @@ function ConfigModal({ draft, setDraft, chooseDirectory, onClose, onSave, onDele
     <Modal title={`${draft.kind === "claude" ? "Claude" : "Codex"} / ${draft.name}`} onClose={onClose}>
       <div className="scroll-surface max-h-[calc(100vh-180px)] overflow-auto pr-1">
         <div className="space-y-5">
-          <Panel title="基础">
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="ID" value={draft.id} onChange={(value) => set("id", slugify(value))} />
-              <Field label="名称" value={draft.name} onChange={(value) => set("name", value)} />
-              <Field label="类型" value={draft.kind} readOnly />
-              <Toggle label="启用" checked={draft.enabled} onChange={(value) => set("enabled", value)} />
-              <Field
-                label="工作目录"
-                value={draft.workingDirectory}
-                onChange={(value) => set("workingDirectory", value)}
-                actionIcon={FolderOpen}
-                actionTitle="选择目录"
-                onAction={async () => {
-                  const selected = await chooseDirectory(draft.workingDirectory);
-                  if (selected) set("workingDirectory", selected);
-                }}
-                wide
-              />
-            </div>
-          </Panel>
+          <SectionHeader label="基本信息" />
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="名称" value={draft.name} onChange={(value) => set("name", value)} />
+            <Toggle label="启用" checked={draft.enabled} onChange={(value) => set("enabled", value)} />
+            <Field
+              label="工作目录"
+              value={draft.workingDirectory}
+              onChange={(value) => set("workingDirectory", value)}
+              actionIcon={FolderOpen}
+              actionTitle="选择目录"
+              onAction={async () => {
+                const selected = await chooseDirectory(draft.workingDirectory);
+                if (selected) set("workingDirectory", selected);
+              }}
+              wide
+            />
+          </div>
 
           {draft.kind === "claude" ? <ClaudeEditor draft={draft} set={set} /> : <CodexEditor draft={draft} set={set} />}
         </div>
@@ -436,57 +456,43 @@ function ClaudeEditor({ draft, set }) {
   const c = ensureClaudeConfig(draft.config);
   return (
     <>
-      <Panel title="Claude">
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Base URL" value={c.baseUrl} onChange={(value) => set("config.baseUrl", value)} wide />
-          <SecretField label="Auth Token" value={c.authToken} onChange={(value) => set("config.authToken", value)} wide />
-          <Field label="ANTHROPIC_MODEL" value={c.models.main} onChange={(value) => set("config.models.main", value)} />
-          <Field label="ANTHROPIC_DEFAULT_SONNET_MODEL" value={c.models.sonnet} onChange={(value) => set("config.models.sonnet", value)} />
-          <Field label="ANTHROPIC_DEFAULT_OPUS_MODEL" value={c.models.opus} onChange={(value) => set("config.models.opus", value)} />
-          <Field label="ANTHROPIC_DEFAULT_HAIKU_MODEL" value={c.models.haiku} onChange={(value) => set("config.models.haiku", value)} />
-        </div>
-      </Panel>
+      <SectionHeader label="连接" />
+      <div className="grid grid-cols-1 gap-3">
+        <Field label="Base URL" value={c.baseUrl} onChange={(value) => set("config.baseUrl", value)} />
+        <SecretField label="Auth Token" value={c.authToken} onChange={(value) => set("config.authToken", value)} />
+      </div>
 
-      <Panel title="启动选项">
+      <SectionHeader label="模型" />
+      <div className="grid grid-cols-1 gap-3">
+        <Field label="ANTHROPIC_MODEL" value={c.models.main} onChange={(value) => set("config.models.main", value)} />
+        <Field label="ANTHROPIC_DEFAULT_SONNET_MODEL" value={c.models.sonnet} onChange={(value) => set("config.models.sonnet", value)} />
+        <Field label="ANTHROPIC_DEFAULT_OPUS_MODEL" value={c.models.opus} onChange={(value) => set("config.models.opus", value)} />
+        <Field label="ANTHROPIC_DEFAULT_HAIKU_MODEL" value={c.models.haiku} onChange={(value) => set("config.models.haiku", value)} />
+      </div>
+
+      <CollapsibleSection label="高级选项">
         <div className="grid grid-cols-2 gap-3">
           <SelectField label="--setting-sources" value={c.launch.settingSources} options={["local", "user", "project"]} onChange={(value) => set("config.launch.settingSources", value)} />
           <Toggle label="--dangerously-skip-permissions" checked={c.launch.dangerouslySkipPermissions} onChange={(value) => set("config.launch.dangerouslySkipPermissions", value)} />
           <ArrayField label="Extra Args" value={c.launch.extraArgs || []} onChange={(value) => set("config.launch.extraArgs", value)} />
         </div>
-      </Panel>
-
-      <AdvancedClaudePanel config={c} set={set} />
-    </>
-  );
-}
-
-function AdvancedClaudePanel({ config, set }) {
-  const [open, setOpen] = React.useState(false);
-  const a = config.advanced;
-  return (
-    <section className="rounded-md border border-zinc-800 bg-zinc-950">
-      <button type="button" onClick={() => setOpen((value) => !value)} className="flex w-full items-center justify-between border-b border-zinc-800 px-4 py-2 text-left">
-        <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">高级设置</span>
-        {open ? <ChevronDown size={15} className="text-zinc-400" /> : <ChevronRight size={15} className="text-zinc-400" />}
-      </button>
-      {open && (
-        <div className="space-y-4 p-4">
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="API_TIMEOUT_MS" value={a.apiTimeoutMs} onChange={(value) => set("config.advanced.apiTimeoutMs", value)} />
-            <Toggle label="CLAUDE_CODE_USE_POWERSHELL_TOOL" checked={a.usePowershellTool} onChange={(value) => set("config.advanced.usePowershellTool", value)} />
-            <Toggle label="CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" checked={a.disableNonessentialTraffic} onChange={(value) => set("config.advanced.disableNonessentialTraffic", value)} />
-            <Toggle label="CLAUDE_CODE_DISABLE_TELEMETRY" checked={a.disableTelemetry} onChange={(value) => set("config.advanced.disableTelemetry", value)} />
-            <Toggle label="CLAUDE_CODE_DISABLE_AUTOUPDATER" checked={a.disableAutoUpdater} onChange={(value) => set("config.advanced.disableAutoUpdater", value)} />
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <Field label="BASH_DEFAULT_TIMEOUT_MS" value={a.bashDefaultTimeoutMs} onChange={(value) => set("config.advanced.bashDefaultTimeoutMs", value)} />
-            <Field label="BASH_MAX_TIMEOUT_MS" value={a.bashMaxTimeoutMs} onChange={(value) => set("config.advanced.bashMaxTimeoutMs", value)} />
-            <Field label="BASH_MAX_OUTPUT_LENGTH" value={a.bashMaxOutputLength} onChange={(value) => set("config.advanced.bashMaxOutputLength", value)} />
-          </div>
-          <JsonField label="Extra Env" value={a.extraEnv || {}} onChange={(value) => set("config.advanced.extraEnv", value)} />
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <Field label="API_TIMEOUT_MS" value={c.advanced.apiTimeoutMs} onChange={(value) => set("config.advanced.apiTimeoutMs", value)} />
+          <Toggle label="CLAUDE_CODE_USE_POWERSHELL_TOOL" checked={c.advanced.usePowershellTool} onChange={(value) => set("config.advanced.usePowershellTool", value)} />
+          <Toggle label="CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" checked={c.advanced.disableNonessentialTraffic} onChange={(value) => set("config.advanced.disableNonessentialTraffic", value)} />
+          <Toggle label="CLAUDE_CODE_DISABLE_TELEMETRY" checked={c.advanced.disableTelemetry} onChange={(value) => set("config.advanced.disableTelemetry", value)} />
+          <Toggle label="CLAUDE_CODE_DISABLE_AUTOUPDATER" checked={c.advanced.disableAutoUpdater} onChange={(value) => set("config.advanced.disableAutoUpdater", value)} />
         </div>
-      )}
-    </section>
+        <div className="mt-4 grid grid-cols-3 gap-3">
+          <Field label="BASH_DEFAULT_TIMEOUT_MS" value={c.advanced.bashDefaultTimeoutMs} onChange={(value) => set("config.advanced.bashDefaultTimeoutMs", value)} />
+          <Field label="BASH_MAX_TIMEOUT_MS" value={c.advanced.bashMaxTimeoutMs} onChange={(value) => set("config.advanced.bashMaxTimeoutMs", value)} />
+          <Field label="BASH_MAX_OUTPUT_LENGTH" value={c.advanced.bashMaxOutputLength} onChange={(value) => set("config.advanced.bashMaxOutputLength", value)} />
+        </div>
+        <div className="mt-4">
+          <JsonField label="Extra Env" value={c.advanced.extraEnv || {}} onChange={(value) => set("config.advanced.extraEnv", value)} />
+        </div>
+      </CollapsibleSection>
+    </>
   );
 }
 
@@ -494,28 +500,34 @@ function CodexEditor({ draft, set }) {
   const c = draft.config;
   return (
     <>
-      <Panel title="Codex">
+      <SectionHeader label="连接" />
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="API Key Env" value={c.apiKeyEnvName} onChange={(value) => set("config.apiKeyEnvName", value)} />
+        <SecretField label="API Key" value={c.apiKey} onChange={(value) => set("config.apiKey", value)} />
+        <Field label="base_url" value={c.provider.baseUrl} onChange={(value) => set("config.provider.baseUrl", value)} wide />
+      </div>
+
+      <SectionHeader label="模型" />
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="model_provider" value={c.provider.id} onChange={(value) => set("config.provider.id", slugify(value) || "custom")} />
+        <Field label="Provider Name" value={c.provider.name} onChange={(value) => set("config.provider.name", value)} />
+        <Field label="model" value={c.model} onChange={(value) => set("config.model", value)} />
+        <SelectField label="wire_api" value={c.provider.wireApi} options={["responses", "chat"]} onChange={(value) => set("config.provider.wireApi", value)} />
+        <SelectField label="model_reasoning_effort" value={c.reasoningEffort} options={["minimal", "low", "medium", "high"]} onChange={(value) => set("config.reasoningEffort", value)} />
+      </div>
+
+      <CollapsibleSection label="高级选项">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="API Key Env" value={c.apiKeyEnvName} onChange={(value) => set("config.apiKeyEnvName", value)} />
-          <SecretField label="API Key" value={c.apiKey} onChange={(value) => set("config.apiKey", value)} />
-          <Field label="model_provider" value={c.provider.id} onChange={(value) => set("config.provider.id", slugify(value) || "custom")} />
-          <Field label="Provider Name" value={c.provider.name} onChange={(value) => set("config.provider.name", value)} />
-          <Field label="base_url" value={c.provider.baseUrl} onChange={(value) => set("config.provider.baseUrl", value)} wide />
-          <SelectField label="wire_api" value={c.provider.wireApi} options={["responses", "chat"]} onChange={(value) => set("config.provider.wireApi", value)} />
-          <Field label="model" value={c.model} onChange={(value) => set("config.model", value)} />
-          <SelectField label="model_reasoning_effort" value={c.reasoningEffort} options={["minimal", "low", "medium", "high"]} onChange={(value) => set("config.reasoningEffort", value)} />
           <Toggle label="--ignore-user-config" checked={c.ignoreUserConfig} onChange={(value) => set("config.ignoreUserConfig", value)} />
           <Toggle label="disable_response_storage" checked={c.disableResponseStorage} onChange={(value) => set("config.disableResponseStorage", value)} />
           <Toggle label="features.apps" checked={c.appsEnabled} onChange={(value) => set("config.appsEnabled", value)} />
         </div>
-      </Panel>
-      <Panel title="高级">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="mt-4 grid grid-cols-2 gap-3">
           <JsonField label="Extra Env" value={c.extraEnv || {}} onChange={(value) => set("config.extraEnv", value)} />
           <JsonField label="Extra Config (-c)" value={c.extraConfig || {}} onChange={(value) => set("config.extraConfig", value)} />
           <ArrayField label="Extra Args" value={c.extraArgs || []} onChange={(value) => set("config.extraArgs", value)} />
         </div>
-      </Panel>
+      </CollapsibleSection>
     </>
   );
 }
@@ -559,15 +571,6 @@ function Modal({ title, onClose, children, wide, compact }) {
         <div className="p-5">{children}</div>
       </div>
     </div>
-  );
-}
-
-function Panel({ title, children }) {
-  return (
-    <section className="rounded-md border border-zinc-800 bg-zinc-950">
-      <div className="border-b border-zinc-800 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">{title}</div>
-      <div className="p-4">{children}</div>
-    </section>
   );
 }
 
