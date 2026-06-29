@@ -392,8 +392,9 @@ function SwitchRow({ label, description, checked, onChange }) {
         <div className="text-sm text-white">{label}</div>
         <div className="mt-0.5 text-[11px] leading-relaxed text-zinc-500">{description}</div>
       </div>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="hidden" />
       <div className={`relative h-5 w-9 shrink-0 rounded-full border transition-colors ${checked ? "border-white bg-white" : "border-zinc-600"}`}>
-        <div className={`absolute top-px h-[14px] w-[14px] rounded-full bg-black transition-all ${checked ? "left-[18px]" : "left-px"}`} />
+        <div className={`absolute top-1/2 h-[14px] w-[14px] -translate-y-1/2 rounded-full bg-black transition-all ${checked ? "left-[18px]" : "left-px"}`} />
       </div>
     </label>
   );
