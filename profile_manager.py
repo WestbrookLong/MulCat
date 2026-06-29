@@ -131,6 +131,7 @@ def normalize_claude_config(config: dict[str, Any]) -> dict[str, Any]:
     return {
         "baseUrl": str(config.get("baseUrl") or ""),
         "authToken": str(config.get("authToken") or ""),
+        "claudeConfigDir": str(config.get("claudeConfigDir") or ""),
         "models": {
             "main": str(models.get("main") or old_model),
             "sonnet": str(models.get("sonnet") or old_sonnet),
@@ -207,6 +208,7 @@ def generate_claude_script(profile: dict[str, Any]) -> str:
     lines.extend(
         env_lines(
             {
+                "CLAUDE_CONFIG_DIR": config.get("claudeConfigDir", ""),
                 "ANTHROPIC_AUTH_TOKEN": config["authToken"],
                 "ANTHROPIC_BASE_URL": config["baseUrl"],
             },

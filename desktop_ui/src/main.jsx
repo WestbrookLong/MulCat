@@ -31,6 +31,7 @@ const claudeProviders = [
     config: {
       baseUrl: "https://lingsuan.top",
       authToken: "",
+      claudeConfigDir: "",
       models: { main: "", sonnet: "", opus: "", haiku: "" },
       launch: { settingSources: "local", dangerouslySkipPermissions: true, extraArgs: [] },
       advanced: {
@@ -54,6 +55,7 @@ const claudeProviders = [
     config: {
       baseUrl: "https://api.deepseek.com/anthropic",
       authToken: "",
+      claudeConfigDir: "",
       models: {
         main: "deepseek-v4-pro",
         sonnet: "deepseek-v4-pro",
@@ -446,6 +448,20 @@ function ConfigModal({ draft, setDraft, chooseDirectory, onClose, onSave, onDele
               }}
               wide
             />
+            {draft.kind === "claude" && (
+              <Field
+                label=".claude目录"
+                value={ensureClaudeConfig(draft.config).claudeConfigDir}
+                onChange={(value) => set("config.claudeConfigDir", value)}
+                actionIcon={FolderOpen}
+                actionTitle="选择目录"
+                onAction={async () => {
+                  const selected = await chooseDirectory(ensureClaudeConfig(draft.config).claudeConfigDir || draft.workingDirectory);
+                  if (selected) set("config.claudeConfigDir", selected);
+                }}
+                wide
+              />
+            )}
           </div>
 
           {draft.kind === "claude" ? <ClaudeEditor draft={draft} set={set} /> : <CodexEditor draft={draft} set={set} />}
@@ -866,6 +882,7 @@ function summary(profile) {
 function ensureClaudeConfig(config) {
   return {
     ...config,
+    claudeConfigDir: config.claudeConfigDir || "",
     models: config.models || { main: "", sonnet: "", opus: "", haiku: "" },
     launch: config.launch || { settingSources: "local", dangerouslySkipPermissions: true, extraArgs: [] },
     advanced: config.advanced || {
