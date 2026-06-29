@@ -385,6 +385,38 @@ function CollapsibleSection({ label, children }) {
   );
 }
 
+function SwitchRow({ label, description, checked, onChange }) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-4 border-b border-zinc-800 py-3 transition hover:bg-zinc-900/30">
+      <div className="min-w-0">
+        <div className="text-sm text-white">{label}</div>
+        <div className="mt-0.5 text-[11px] leading-relaxed text-zinc-500">{description}</div>
+      </div>
+      <div className={`relative h-5 w-9 shrink-0 rounded-full border transition-colors ${checked ? "border-white bg-white" : "border-zinc-600"}`}>
+        <div className={`absolute top-px h-[14px] w-[14px] rounded-full bg-black transition-all ${checked ? "left-[18px]" : "left-px"}`} />
+      </div>
+    </label>
+  );
+}
+
+function FieldRow({ label, description, value, onChange, placeholder }) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-zinc-800 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="text-sm text-white">{label}</div>
+        <div className="mt-0.5 text-[11px] leading-relaxed text-zinc-500">{description}</div>
+      </div>
+      <input
+        type="text"
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="h-8 w-36 shrink-0 rounded-sm border border-zinc-700 bg-black px-2 text-xs text-white outline-none transition focus:border-white"
+      />
+    </div>
+  );
+}
+
 function ConfigModal({ draft, setDraft, chooseDirectory, onClose, onSave, onDelete }) {
   const set = (path, value) => {
     setDraft((current) => {
@@ -401,7 +433,6 @@ function ConfigModal({ draft, setDraft, chooseDirectory, onClose, onSave, onDele
           <SectionHeader label="基本信息" />
           <div className="grid grid-cols-2 gap-3">
             <Field label="名称" value={draft.name} onChange={(value) => set("name", value)} />
-            <Toggle label="启用" checked={draft.enabled} onChange={(value) => set("enabled", value)} />
             <Field
               label="工作目录"
               value={draft.workingDirectory}
@@ -471,24 +502,71 @@ function ClaudeEditor({ draft, set }) {
       </div>
 
       <CollapsibleSection label="高级选项">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="-mx-1">
           <SelectField label="--setting-sources" value={c.launch.settingSources} options={["local", "user", "project"]} onChange={(value) => set("config.launch.settingSources", value)} />
-          <Toggle label="--dangerously-skip-permissions" checked={c.launch.dangerouslySkipPermissions} onChange={(value) => set("config.launch.dangerouslySkipPermissions", value)} />
+        </div>
+        <div className="px-1">
+          <SwitchRow
+            label="--dangerously-skip-permissions"
+            description="跳过所有权限确认提示，直接执行操作"
+            checked={c.launch.dangerouslySkipPermissions}
+            onChange={(value) => set("config.launch.dangerouslySkipPermissions", value)}
+          />
+          <SwitchRow
+            label="CLAUDE_CODE_USE_POWERSHELL_TOOL"
+            description="通过 PowerShell 执行所有命令，而非 Bash"
+            checked={c.advanced.usePowershellTool}
+            onChange={(value) => set("config.advanced.usePowershellTool", value)}
+          />
+          <SwitchRow
+            label="CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
+            description="禁止 Claude 发送遥测以外的非必要网络请求"
+            checked={c.advanced.disableNonessentialTraffic}
+            onChange={(value) => set("config.advanced.disableNonessentialTraffic", value)}
+          />
+          <SwitchRow
+            label="CLAUDE_CODE_DISABLE_TELEMETRY"
+            description="关闭所有遥测数据上报"
+            checked={c.advanced.disableTelemetry}
+            onChange={(value) => set("config.advanced.disableTelemetry", value)}
+          />
+          <SwitchRow
+            label="CLAUDE_CODE_DISABLE_AUTOUPDATER"
+            description="阻止 Claude CLI 自动检查并下载更新"
+            checked={c.advanced.disableAutoUpdater}
+            onChange={(value) => set("config.advanced.disableAutoUpdater", value)}
+          />
+        </div>
+        <div className="px-1">
+          <FieldRow
+            label="API_TIMEOUT_MS"
+            description="API 请求超时时间，单位毫秒"
+            value={c.advanced.apiTimeoutMs}
+            onChange={(value) => set("config.advanced.apiTimeoutMs", value)}
+          />
+          <FieldRow
+            label="BASH_DEFAULT_TIMEOUT_MS"
+            description="Bash 命令的默认执行超时时间"
+            value={c.advanced.bashDefaultTimeoutMs}
+            onChange={(value) => set("config.advanced.bashDefaultTimeoutMs", value)}
+          />
+          <FieldRow
+            label="BASH_MAX_TIMEOUT_MS"
+            description="Bash 命令允许的最大超时时间"
+            value={c.advanced.bashMaxTimeoutMs}
+            onChange={(value) => set("config.advanced.bashMaxTimeoutMs", value)}
+          />
+          <FieldRow
+            label="BASH_MAX_OUTPUT_LENGTH"
+            description="Bash 命令输出的最大字符数"
+            value={c.advanced.bashMaxOutputLength}
+            onChange={(value) => set("config.advanced.bashMaxOutputLength", value)}
+          />
+        </div>
+        <div className="px-1">
           <ArrayField label="Extra Args" value={c.launch.extraArgs || []} onChange={(value) => set("config.launch.extraArgs", value)} />
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <Field label="API_TIMEOUT_MS" value={c.advanced.apiTimeoutMs} onChange={(value) => set("config.advanced.apiTimeoutMs", value)} />
-          <Toggle label="CLAUDE_CODE_USE_POWERSHELL_TOOL" checked={c.advanced.usePowershellTool} onChange={(value) => set("config.advanced.usePowershellTool", value)} />
-          <Toggle label="CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" checked={c.advanced.disableNonessentialTraffic} onChange={(value) => set("config.advanced.disableNonessentialTraffic", value)} />
-          <Toggle label="CLAUDE_CODE_DISABLE_TELEMETRY" checked={c.advanced.disableTelemetry} onChange={(value) => set("config.advanced.disableTelemetry", value)} />
-          <Toggle label="CLAUDE_CODE_DISABLE_AUTOUPDATER" checked={c.advanced.disableAutoUpdater} onChange={(value) => set("config.advanced.disableAutoUpdater", value)} />
-        </div>
-        <div className="mt-4 grid grid-cols-3 gap-3">
-          <Field label="BASH_DEFAULT_TIMEOUT_MS" value={c.advanced.bashDefaultTimeoutMs} onChange={(value) => set("config.advanced.bashDefaultTimeoutMs", value)} />
-          <Field label="BASH_MAX_TIMEOUT_MS" value={c.advanced.bashMaxTimeoutMs} onChange={(value) => set("config.advanced.bashMaxTimeoutMs", value)} />
-          <Field label="BASH_MAX_OUTPUT_LENGTH" value={c.advanced.bashMaxOutputLength} onChange={(value) => set("config.advanced.bashMaxOutputLength", value)} />
-        </div>
-        <div className="mt-4">
+        <div className="px-1">
           <JsonField label="Extra Env" value={c.advanced.extraEnv || {}} onChange={(value) => set("config.advanced.extraEnv", value)} />
         </div>
       </CollapsibleSection>
@@ -517,12 +595,27 @@ function CodexEditor({ draft, set }) {
       </div>
 
       <CollapsibleSection label="高级选项">
-        <div className="grid grid-cols-2 gap-3">
-          <Toggle label="--ignore-user-config" checked={c.ignoreUserConfig} onChange={(value) => set("config.ignoreUserConfig", value)} />
-          <Toggle label="disable_response_storage" checked={c.disableResponseStorage} onChange={(value) => set("config.disableResponseStorage", value)} />
-          <Toggle label="features.apps" checked={c.appsEnabled} onChange={(value) => set("config.appsEnabled", value)} />
+        <div className="px-1">
+          <SwitchRow
+            label="--ignore-user-config"
+            description="忽略用户目录下的全局配置文件"
+            checked={c.ignoreUserConfig}
+            onChange={(value) => set("config.ignoreUserConfig", value)}
+          />
+          <SwitchRow
+            label="disable_response_storage"
+            description="禁止将响应数据写入本地存储"
+            checked={c.disableResponseStorage}
+            onChange={(value) => set("config.disableResponseStorage", value)}
+          />
+          <SwitchRow
+            label="features.apps"
+            description="启用 Codex Apps 功能模块"
+            checked={c.appsEnabled}
+            onChange={(value) => set("config.appsEnabled", value)}
+          />
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="mt-4 grid grid-cols-2 gap-3 px-1">
           <JsonField label="Extra Env" value={c.extraEnv || {}} onChange={(value) => set("config.extraEnv", value)} />
           <JsonField label="Extra Config (-c)" value={c.extraConfig || {}} onChange={(value) => set("config.extraConfig", value)} />
           <ArrayField label="Extra Args" value={c.extraArgs || []} onChange={(value) => set("config.extraArgs", value)} />
