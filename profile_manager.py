@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -82,6 +83,26 @@ def save_profile(profile: dict[str, Any]) -> dict[str, Any]:
     path = profile_path(normalized["kind"], normalized["id"])
     path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     script = generate_script(normalized)
+    return {**normalized, "_jsonPath": str(path), "_scriptPath": str(script)}
+
+
+def save_script_and_sync_profile(kind: str, profile_id: str, text: str) -> dict[str, Any]:
+    safe_kind = validate_kind(kind)
+    safe_id = validate_id(profile_id)
+    script = script_path(safe_kind, safe_id)
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text(str(text), encoding="utf-8-sig")
+
+    path = profile_path(safe_kind, safe_id)
+    if not path.exists():
+        raise ProfileError(f"Profile does not exist: {safe_id}.")
+    profile = normalize_profile(json.loads(path.read_text(encoding="utf-8")))
+    if safe_kind == "claude":
+        profile = sync_claude_script_to_profile(profile, str(text))
+    else:
+        profile = sync_codex_script_to_profile(profile, str(text))
+    normalized = normalize_profile(profile)
+    path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return {**normalized, "_jsonPath": str(path), "_scriptPath": str(script)}
 
 
@@ -288,6 +309,267 @@ def generate_codex_script(profile: dict[str, Any]) -> str:
         parts.append(toml_assignment(key, value))
     lines.append(ps_multiline_command(parts))
     return "\n".join(lines) + "\n"
+
+
+def sync_claude_script_to_profile(profile: dict[str, Any], text: str) -> dict[str, Any]:
+    next_profile = normalize_profile(profile)
+    parsed = parse_ps1(text)
+    if parsed["workingDirectory"]:
+        next_profile["workingDirectory"] = parsed["workingDirectory"]
+
+    config = next_profile["config"]
+    advanced = config["advanced"]
+    models = config["models"]
+    launch = config["launch"]
+    extra_env = dict(advanced.get("extraEnv") or {})
+
+    env_map = {
+        "CLAUDE_CONFIG_DIR": ("config", "claudeConfigDir"),
+        "ANTHROPIC_AUTH_TOKEN": ("config", "authToken"),
+        "ANTHROPIC_BASE_URL": ("config", "baseUrl"),
+        "ANTHROPIC_MODEL": ("models", "main"),
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": ("models", "sonnet"),
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": ("models", "opus"),
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": ("models", "haiku"),
+        "API_TIMEOUT_MS": ("advanced", "apiTimeoutMs"),
+        "BASH_DEFAULT_TIMEOUT_MS": ("advanced", "bashDefaultTimeoutMs"),
+        "BASH_MAX_TIMEOUT_MS": ("advanced", "bashMaxTimeoutMs"),
+        "BASH_MAX_OUTPUT_LENGTH": ("advanced", "bashMaxOutputLength"),
+    }
+    bool_env_map = {
+        "CLAUDE_CODE_USE_POWERSHELL_TOOL": "usePowershellTool",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "disableNonessentialTraffic",
+        "CLAUDE_CODE_DISABLE_TELEMETRY": "disableTelemetry",
+        "CLAUDE_CODE_DISABLE_AUTOUPDATER": "disableAutoUpdater",
+    }
+    for key, value in parsed["env"].items():
+        if key in env_map:
+            scope, target = env_map[key]
+            if scope == "config":
+                config[target] = value
+            elif scope == "models":
+                models[target] = value
+            else:
+                advanced[target] = value
+        elif key in bool_env_map:
+            parsed_bool = parse_bool(value)
+            if parsed_bool is not None:
+                advanced[bool_env_map[key]] = parsed_bool
+        else:
+            extra_env[key] = value
+    advanced["extraEnv"] = extra_env
+
+    args = parsed["commands"].get("claude")
+    if args:
+        extra_args = []
+        index = 0
+        while index < len(args):
+            arg = args[index]
+            if arg == "--setting-sources" and index + 1 < len(args):
+                launch["settingSources"] = args[index + 1]
+                index += 2
+            elif arg == "--dangerously-skip-permissions":
+                launch["dangerouslySkipPermissions"] = True
+                index += 1
+            else:
+                extra_args.append(arg)
+                index += 1
+        launch["extraArgs"] = extra_args
+    return next_profile
+
+
+def sync_codex_script_to_profile(profile: dict[str, Any], text: str) -> dict[str, Any]:
+    next_profile = normalize_profile(profile)
+    parsed = parse_ps1(text)
+    if parsed["workingDirectory"]:
+        next_profile["workingDirectory"] = parsed["workingDirectory"]
+
+    config = next_profile["config"]
+    provider = config["provider"]
+    extra_env = dict(config.get("extraEnv") or {})
+    api_key_env_name = config["apiKeyEnvName"]
+    for key, value in parsed["env"].items():
+        if key == api_key_env_name:
+            config["apiKey"] = value
+        else:
+            extra_env[key] = value
+    config["extraEnv"] = extra_env
+
+    args = parsed["commands"].get("codex")
+    if not args:
+        return next_profile
+
+    extra_args = []
+    extra_config = dict(config.get("extraConfig") or {})
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--ignore-user-config":
+            config["ignoreUserConfig"] = True
+            index += 1
+        elif arg == "-c" and index + 1 < len(args):
+            key, value = parse_assignment(args[index + 1])
+            if key:
+                apply_codex_config_value(config, provider, extra_config, key, value)
+            index += 2
+        else:
+            extra_args.append(arg)
+            index += 1
+    if config["apiKeyEnvName"] in extra_env:
+        config["apiKey"] = str(extra_env.pop(config["apiKeyEnvName"]))
+    config["extraArgs"] = extra_args
+    config["extraConfig"] = extra_config
+    config["extraEnv"] = extra_env
+    return next_profile
+
+
+def apply_codex_config_value(config: dict[str, Any], provider: dict[str, Any], extra_config: dict[str, Any], key: str, value: Any) -> None:
+    if key == "model_provider":
+        provider["id"] = str(value)
+    elif key == "model":
+        config["model"] = str(value)
+    elif key == "model_reasoning_effort":
+        config["reasoningEffort"] = str(value)
+    elif key == "disable_response_storage":
+        config["disableResponseStorage"] = bool(value)
+    elif key == "features.apps":
+        config["appsEnabled"] = bool(value)
+    elif key.startswith("model_providers.") and key.endswith(".name"):
+        provider["name"] = str(value)
+    elif key.startswith("model_providers.") and key.endswith(".base_url"):
+        provider["baseUrl"] = str(value)
+    elif key.startswith("model_providers.") and key.endswith(".env_key"):
+        config["apiKeyEnvName"] = str(value)
+    elif key.startswith("model_providers.") and key.endswith(".wire_api"):
+        provider["wireApi"] = str(value)
+    else:
+        extra_config[key] = value
+
+
+def parse_ps1(text: str) -> dict[str, Any]:
+    env: dict[str, str] = {}
+    commands: dict[str, list[str]] = {}
+    working_directory = ""
+    for line in join_ps_continuations(text).splitlines():
+        stripped = strip_ps_comment(line).strip()
+        if not stripped:
+            continue
+        location = parse_location_line(stripped)
+        if location:
+            working_directory = location
+            continue
+        env_match = re.match(r"^\$env:([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*$", stripped)
+        if env_match:
+            env[env_match.group(1)] = parse_ps_value(env_match.group(2))
+            continue
+        tokens = ps_tokenize(stripped)
+        if tokens and tokens[0].lower() in {"claude", "codex"}:
+            commands[tokens[0].lower()] = tokens[1:]
+    return {"workingDirectory": working_directory, "env": env, "commands": commands}
+
+
+def join_ps_continuations(text: str) -> str:
+    lines = []
+    current = ""
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        if line.endswith("`"):
+            current += line[:-1] + " "
+        else:
+            lines.append(current + line)
+            current = ""
+    if current:
+        lines.append(current)
+    return "\n".join(lines)
+
+
+def strip_ps_comment(line: str) -> str:
+    in_single = False
+    in_double = False
+    index = 0
+    while index < len(line):
+        ch = line[index]
+        if ch == "'" and not in_double:
+            in_single = not in_single
+        elif ch == '"' and not in_single:
+            in_double = not in_double
+        elif ch == "#" and not in_single and not in_double:
+            return line[:index]
+        index += 1
+    return line
+
+
+def parse_location_line(line: str) -> str:
+    tokens = ps_tokenize(line)
+    if len(tokens) >= 2 and tokens[0].lower() in {"cd", "set-location"}:
+        return tokens[1]
+    return ""
+
+
+def parse_ps_value(value: str) -> str:
+    tokens = ps_tokenize(value)
+    return tokens[0] if tokens else value.strip()
+
+
+def ps_tokenize(line: str) -> list[str]:
+    tokens: list[str] = []
+    current = ""
+    quote = ""
+    index = 0
+    while index < len(line):
+        ch = line[index]
+        if quote:
+            if quote == '"' and ch == "`" and index + 1 < len(line):
+                current += line[index + 1]
+                index += 2
+                continue
+            if ch == quote:
+                quote = ""
+            else:
+                current += ch
+        else:
+            if ch in {"'", '"'}:
+                quote = ch
+            elif ch.isspace():
+                if current:
+                    tokens.append(current)
+                    current = ""
+            else:
+                current += ch
+        index += 1
+    if current:
+        tokens.append(current)
+    return tokens
+
+
+def parse_bool(value: Any) -> bool | None:
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off", ""}:
+        return False
+    return None
+
+
+def parse_assignment(value: str) -> tuple[str, Any]:
+    if "=" not in value:
+        return "", ""
+    key, raw = value.split("=", 1)
+    return key.strip(), parse_toml_scalar(raw.strip())
+
+
+def parse_toml_scalar(value: str) -> Any:
+    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+        return value[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+    lowered = value.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    try:
+        return int(value)
+    except ValueError:
+        return value
 
 
 def claude_script_header(profile: dict[str, Any]) -> list[str]:

@@ -4,6 +4,7 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
+  ClipboardCopy,
   Code2,
   CopyPlus,
   Eye,
@@ -242,6 +243,26 @@ function App() {
     setScriptModal({ open: false, path: "", text: "", profile: null });
   }
 
+  async function saveScriptAndSync() {
+    if (!scriptModal.profile) return;
+    await callApi("save_script_and_sync", scriptModal.profile.kind, scriptModal.profile.id, scriptModal.text);
+    setScriptModal({ open: false, path: "", text: "", profile: null });
+  }
+
+  async function copyScriptPath(profile) {
+    const path = profile._scriptPath || "";
+    if (!path) {
+      setLocalMessage("Script path is empty.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(path);
+      setLocalMessage("Copied PS1 path.");
+    } catch (error) {
+      await callApi("copy_text", path);
+    }
+  }
+
   const displayMessage = localMessage || state.message || "Ready";
 
   return (
@@ -299,6 +320,7 @@ function App() {
                     }}
                     onLaunch={() => callApi("launch_profile", profile.kind, profile.id)}
                     onScript={() => openScript(profile)}
+                    onCopyPath={() => copyScriptPath(profile)}
                     onDuplicate={() => duplicateProfile(profile)}
                   />
                 ))}
@@ -337,6 +359,7 @@ function App() {
           setText={(text) => setScriptModal((current) => ({ ...current, text }))}
           onClose={() => setScriptModal({ open: false, path: "", text: "", profile: null })}
           onSave={saveScript}
+          onSaveAndSync={saveScriptAndSync}
         />
       )}
     </div>
@@ -482,7 +505,7 @@ function ConfigModal({ draft, setDraft, chooseDirectory, onClose, onSave, onDele
   );
 }
 
-function ScriptModal({ path, text, setText, onClose, onSave }) {
+function ScriptModal({ path, text, setText, onClose, onSave, onSaveAndSync }) {
   return (
     <Modal title="直接编辑 PS1" onClose={onClose} wide>
       <div className="mb-2 truncate font-mono text-[11px] text-zinc-500">{path}</div>
@@ -494,6 +517,7 @@ function ScriptModal({ path, text, setText, onClose, onSave }) {
       />
       <div className="mt-4 flex justify-end gap-2 border-t border-zinc-800 pt-4">
         <ActionButton icon={X} label="取消" onClick={onClose} />
+        <ActionButton icon={Save} label="Save PS1 + Sync JSON" onClick={onSaveAndSync} />
         <ActionButton icon={Save} label="保存 PS1" onClick={onSave} primary />
       </div>
     </Modal>
@@ -642,7 +666,7 @@ function CodexEditor({ draft, set }) {
   );
 }
 
-function ProfileCard({ profile, active, onSelect, onLaunch, onScript, onDuplicate }) {
+function ProfileCard({ profile, active, onSelect, onLaunch, onScript, onCopyPath, onDuplicate }) {
   const Icon = profile.kind === "claude" ? Bot : TerminalSquare;
   return (
     <article className={`rounded-lg border p-4 transition ${active ? "border-white bg-zinc-900" : "border-zinc-800 bg-black hover:border-zinc-500"}`}>
@@ -660,6 +684,7 @@ function ProfileCard({ profile, active, onSelect, onLaunch, onScript, onDuplicat
       </button>
       <div className="mt-4 flex items-center justify-end gap-2 border-t border-zinc-800 pt-3">
         <SmallIconButton icon={CopyPlus} title="复制配置" onClick={onDuplicate} />
+        <SmallIconButton icon={ClipboardCopy} title="Copy PS1 path" onClick={onCopyPath} />
         <SmallIconButton icon={FileCode2} title="编辑 PS1" onClick={onScript} />
         <SmallIconButton icon={Play} title="启动" onClick={onLaunch} strong />
       </div>

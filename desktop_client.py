@@ -14,6 +14,7 @@ from profile_manager import (
     launch_profile,
     load_profiles,
     save_profile,
+    save_script_and_sync_profile,
     script_path,
 )
 
@@ -110,6 +111,17 @@ class DesktopApi:
                 self.last_message = f"Save script failed: {exc}"
             return self._state()
 
+    def save_script_and_sync(self, kind: str, profile_id: str, text: str) -> dict:
+        with self.lock:
+            try:
+                saved = save_script_and_sync_profile(kind, profile_id, text)
+                self.last_message = f"Saved script and synced {saved['id']}."
+            except ProfileError as exc:
+                self.last_message = str(exc)
+            except Exception as exc:
+                self.last_message = f"Sync script failed: {exc}"
+            return self._state()
+
     def launch_profile(self, kind: str, profile_id: str) -> dict:
         with self.lock:
             result = launch_profile(kind, profile_id)
@@ -119,6 +131,21 @@ class DesktopApi:
     def open_scripts_dir(self) -> dict:
         os.startfile(str(SCRIPTS_DIR))
         return self._state()
+
+    def copy_text(self, text: str) -> dict:
+        with self.lock:
+            try:
+                subprocess.run(
+                    ["powershell.exe", "-NoProfile", "-Command", "Set-Clipboard -Value $args[0]", str(text)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                self.last_message = "Copied to clipboard."
+            except Exception as exc:
+                self.last_message = f"Copy failed: {exc}"
+            return self._state()
 
     def choose_directory(self, initial_directory: str = "") -> dict:
         with self.lock:
