@@ -2,8 +2,10 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import {
   Bot,
+  ChevronDown,
+  ChevronRight,
+  ClipboardCopy,
   Code2,
-  CopyPlus,
   Eye,
   EyeOff,
   FileCode2,
@@ -18,30 +20,74 @@ import {
 } from "lucide-react";
 import "./styles.css";
 
-const defaultWorkdir = "";
+const defaultWorkdir = "D:\\AIWorkspace";
+
+const claudeProviders = [
+  {
+    id: "claude-relay",
+    name: "Claude 中转",
+    description: "适合 Anthropic 兼容中转，不预设模型环境变量。",
+    profileName: "Claude 中转",
+    config: {
+      baseUrl: "",
+      authToken: "",
+      claudeConfigDir: "",
+      models: { main: "", sonnet: "", opus: "", haiku: "" },
+      launch: { settingSources: "local", dangerouslySkipPermissions: true, extraArgs: [] },
+      advanced: {
+        apiTimeoutMs: "3000000",
+        disableNonessentialTraffic: true,
+        usePowershellTool: true,
+        disableTelemetry: false,
+        disableAutoUpdater: false,
+        bashDefaultTimeoutMs: "",
+        bashMaxTimeoutMs: "",
+        bashMaxOutputLength: "",
+        extraEnv: {},
+      },
+    },
+  },
+  {
+    id: "deepseek",
+    name: "DeepSeek",
+    description: "预设 DeepSeek Anthropic 兼容地址和模型映射。",
+    profileName: "DeepSeek",
+    config: {
+      baseUrl: "https://api.deepseek.com/anthropic",
+      authToken: "",
+      claudeConfigDir: "",
+      models: {
+        main: "deepseek-v4-pro",
+        sonnet: "deepseek-v4-pro",
+        opus: "deepseek-v4-pro",
+        haiku: "deepseek-v4-flash",
+      },
+      launch: { settingSources: "local", dangerouslySkipPermissions: true, extraArgs: [] },
+      advanced: {
+        apiTimeoutMs: "3000000",
+        disableNonessentialTraffic: true,
+        usePowershellTool: true,
+        disableTelemetry: false,
+        disableAutoUpdater: false,
+        bashDefaultTimeoutMs: "",
+        bashMaxTimeoutMs: "",
+        bashMaxOutputLength: "",
+        extraEnv: {},
+      },
+    },
+  },
+];
 
 const templates = {
   claude: {
     id: "claude-new",
     name: "Claude New",
     kind: "claude",
+    provider: "",
     enabled: true,
     workingDirectory: defaultWorkdir,
     terminal: { mode: "windows-terminal", keepOpen: true },
-    config: {
-      baseUrl: "",
-      authToken: "",
-      model: "sonnet",
-      sonnetModel: "sonnet",
-      opusModel: "sonnet",
-      haikuModel: "sonnet",
-      timeoutMs: 3000000,
-      disableNonessentialTraffic: true,
-      usePowershellTool: true,
-      skipPermissions: true,
-      extraEnv: {},
-      extraArgs: [],
-    },
+    config: clone(claudeProviders[0].config),
   },
   codex: {
     id: "codex-new",
@@ -85,6 +131,7 @@ function App() {
   const [selectedKey, setSelectedKey] = React.useState("");
   const [draft, setDraft] = React.useState(null);
   const [configOpen, setConfigOpen] = React.useState(false);
+  const [providerOpen, setProviderOpen] = React.useState(false);
   const [scriptModal, setScriptModal] = React.useState({ open: false, path: "", text: "", profile: null });
   const [localMessage, setLocalMessage] = React.useState("");
 
@@ -112,12 +159,12 @@ function App() {
 
   React.useEffect(() => {
     if (selected) setSelectedKey(keyOf(selected));
-  }, [filter]);
+  }, [filter, selected]);
 
   async function callApi(action, ...args) {
     const api = desktopApi();
     if (!api) {
-      setLocalMessage("Desktop API is not ready.");
+      setLocalMessage("Desktop API 尚未就绪。");
       return null;
     }
     try {
@@ -131,25 +178,31 @@ function App() {
     }
   }
 
+  async function chooseDirectory(initialDirectory) {
+    const result = await callApi("choose_directory", initialDirectory || defaultWorkdir);
+    return result?.selectedDirectory || "";
+  }
+
   function openConfig(profile) {
     setDraft(clone(profile));
     setConfigOpen(true);
   }
 
   function newProfile() {
-    const next = clone(templates[filter]);
-    const suffix = Date.now().toString().slice(-5);
-    next.id = `${filter}-${suffix}`;
-    next.name = filter === "claude" ? `Claude ${suffix}` : `Codex ${suffix}`;
+    if (filter === "claude") {
+      setProviderOpen(true);
+      return;
+    }
+    const next = withUniqueId(clone(templates.codex), "codex", "Codex");
     setDraft(next);
     setConfigOpen(true);
   }
 
-  function duplicateProfile(profile) {
-    const next = clone(profile);
-    const suffix = Date.now().toString().slice(-5);
-    next.id = `${profile.id}-copy-${suffix}`;
-    next.name = `${profile.name} Copy`;
+  function newClaudeProfile(provider) {
+    const next = withUniqueId(clone(templates.claude), "claude", provider.profileName);
+    next.provider = provider.id;
+    next.config = clone(provider.config);
+    setProviderOpen(false);
     setDraft(next);
     setConfigOpen(true);
   }
@@ -157,6 +210,16 @@ function App() {
   async function saveDraft() {
     if (!draft) return;
     const result = await callApi("save_profile", draft);
+    const saved = result?.profiles?.find((profile) => profile.id === draft.id && profile.kind === draft.kind);
+    if (saved) {
+      setSelectedKey(keyOf(saved));
+      setConfigOpen(false);
+    }
+  }
+
+  async function saveDraftOnly() {
+    if (!draft) return;
+    const result = await callApi("save_profile_only", draft);
     const saved = result?.profiles?.find((profile) => profile.id === draft.id && profile.kind === draft.kind);
     if (saved) {
       setSelectedKey(keyOf(saved));
@@ -180,6 +243,26 @@ function App() {
     setScriptModal({ open: false, path: "", text: "", profile: null });
   }
 
+  async function saveScriptAndSync() {
+    if (!scriptModal.profile) return;
+    await callApi("save_script_and_sync", scriptModal.profile.kind, scriptModal.profile.id, scriptModal.text);
+    setScriptModal({ open: false, path: "", text: "", profile: null });
+  }
+
+  async function copyScriptPath(profile) {
+    const path = profile._scriptPath || "";
+    if (!path) {
+      setLocalMessage("Script path is empty.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(path);
+      setLocalMessage("Copied PS1 path.");
+    } catch (error) {
+      await callApi("copy_text", path);
+    }
+  }
+
   const displayMessage = localMessage || state.message || "Ready";
 
   return (
@@ -194,7 +277,7 @@ function App() {
                 <TerminalSquare size={17} />
                 MulCat
               </div>
-              <div className="mt-1 font-mono text-[11px] text-zinc-500">JSON to script</div>
+              <div className="mt-1 font-mono text-[11px] text-zinc-500">JSON to PS1</div>
             </div>
 
             <nav className="space-y-1 p-3">
@@ -204,7 +287,7 @@ function App() {
 
             <div className="mt-auto border-t border-zinc-800 p-3">
               <IconButton icon={FolderOpen} label="脚本目录" onClick={() => callApi("open_scripts_dir")} />
-              <IconButton icon={RefreshCw} label="重新生成脚本" onClick={() => callApi("generate_all")} />
+              <IconButton icon={RefreshCw} label="重新生成 PS1" onClick={() => callApi("generate_all")} />
             </div>
           </aside>
 
@@ -217,7 +300,7 @@ function App() {
               <button
                 type="button"
                 onClick={newProfile}
-                className="grid h-9 w-9 place-items-center border border-zinc-700 bg-black text-zinc-200 transition hover:border-white hover:text-white"
+                className="grid h-9 w-9 place-items-center rounded-sm border border-zinc-700 bg-black text-zinc-200 transition hover:border-white hover:text-white"
                 title={`新增 ${filter === "claude" ? "Claude" : "Codex"} 配置`}
               >
                 <Plus size={17} />
@@ -237,7 +320,7 @@ function App() {
                     }}
                     onLaunch={() => callApi("launch_profile", profile.kind, profile.id)}
                     onScript={() => openScript(profile)}
-                    onDuplicate={() => duplicateProfile(profile)}
+                    onCopyPath={() => copyScriptPath(profile)}
                   />
                 ))}
               </div>
@@ -252,12 +335,16 @@ function App() {
         </main>
       </div>
 
+      {providerOpen && <ProviderModal providers={claudeProviders} onSelect={newClaudeProfile} onClose={() => setProviderOpen(false)} />}
+
       {configOpen && draft && (
         <ConfigModal
           draft={draft}
           setDraft={setDraft}
+          chooseDirectory={chooseDirectory}
           onClose={() => setConfigOpen(false)}
           onSave={saveDraft}
+          onSaveOnly={saveDraftOnly}
           onDelete={async () => {
             await callApi("delete_profile", draft.kind, draft.id);
             setConfigOpen(false);
@@ -272,13 +359,91 @@ function App() {
           setText={(text) => setScriptModal((current) => ({ ...current, text }))}
           onClose={() => setScriptModal({ open: false, path: "", text: "", profile: null })}
           onSave={saveScript}
+          onSaveAndSync={saveScriptAndSync}
         />
       )}
     </div>
   );
 }
 
-function ConfigModal({ draft, setDraft, onClose, onSave, onDelete }) {
+function ProviderModal({ providers, onSelect, onClose }) {
+  return (
+    <Modal title="选择 Provider" onClose={onClose} compact>
+      <div className="grid gap-3">
+        {providers.map((provider) => (
+          <button
+            key={provider.id}
+            type="button"
+            onClick={() => onSelect(provider)}
+            className="rounded-md border border-zinc-800 bg-zinc-950 p-4 text-left transition hover:border-white"
+          >
+            <div className="text-sm font-semibold text-white">{provider.name}</div>
+            <div className="mt-2 text-xs leading-5 text-zinc-400">{provider.description}</div>
+            <div className="mt-3 font-mono text-[11px] text-zinc-500">{provider.config.baseUrl || "Custom Base URL"}</div>
+          </button>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
+function SectionHeader({ label }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-zinc-400">{label}</span>
+      <div className="h-px flex-1 bg-zinc-800" />
+    </div>
+  );
+}
+
+function CollapsibleSection({ label, children }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <div>
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-3 py-1 text-left">
+        <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-zinc-400">{label}</span>
+        <div className="h-px flex-1 bg-zinc-800" />
+        {open ? <ChevronDown size={15} className="shrink-0 text-zinc-400" /> : <ChevronRight size={15} className="shrink-0 text-zinc-400" />}
+      </button>
+      {open && <div className="space-y-4 pb-2 pt-3">{children}</div>}
+    </div>
+  );
+}
+
+function SwitchRow({ label, description, checked, onChange }) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-4 border-b border-zinc-800 py-3 transition hover:bg-zinc-900/30">
+      <div className="min-w-0">
+        <div className="text-sm text-white">{label}</div>
+        <div className="mt-0.5 text-[11px] leading-relaxed text-zinc-500">{description}</div>
+      </div>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="hidden" />
+      <div className={`relative h-5 w-9 shrink-0 rounded-full border transition-colors ${checked ? "border-white bg-white" : "border-zinc-600"}`}>
+        <div className={`absolute top-1/2 h-[14px] w-[14px] -translate-y-1/2 rounded-full bg-black transition-all ${checked ? "left-[18px]" : "left-px"}`} />
+      </div>
+    </label>
+  );
+}
+
+function FieldRow({ label, description, value, onChange, placeholder }) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-zinc-800 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="text-sm text-white">{label}</div>
+        <div className="mt-0.5 text-[11px] leading-relaxed text-zinc-500">{description}</div>
+      </div>
+      <input
+        type="text"
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="h-8 w-36 shrink-0 rounded-sm border border-zinc-700 bg-black px-2 text-xs text-white outline-none transition focus:border-white"
+      />
+    </div>
+  );
+}
+
+function ConfigModal({ draft, setDraft, chooseDirectory, onClose, onSave, onSaveOnly, onDelete }) {
   const set = (path, value) => {
     setDraft((current) => {
       const next = clone(current);
@@ -291,108 +456,224 @@ function ConfigModal({ draft, setDraft, onClose, onSave, onDelete }) {
     <Modal title={`${draft.kind === "claude" ? "Claude" : "Codex"} / ${draft.name}`} onClose={onClose}>
       <div className="scroll-surface max-h-[calc(100vh-180px)] overflow-auto pr-1">
         <div className="space-y-5">
-          <Panel title="基础">
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="ID" value={draft.id} onChange={(value) => set("id", slugify(value))} />
-              <Field label="名称" value={draft.name} onChange={(value) => set("name", value)} />
-              <Field label="类型" value={draft.kind} readOnly />
-              <Field label="工作目录" value={draft.workingDirectory} onChange={(value) => set("workingDirectory", value)} wide />
-              <Toggle label="启用" checked={draft.enabled} onChange={(value) => set("enabled", value)} />
-            </div>
-          </Panel>
+          <SectionHeader label="基本信息" />
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="名称" value={draft.name} onChange={(value) => set("name", value)} />
+            <Field
+              label="工作目录"
+              value={draft.workingDirectory}
+              onChange={(value) => set("workingDirectory", value)}
+              actionIcon={FolderOpen}
+              actionTitle="选择目录"
+              onAction={async () => {
+                const selected = await chooseDirectory(draft.workingDirectory);
+                if (selected) set("workingDirectory", selected);
+              }}
+              wide
+            />
+            {draft.kind === "claude" && (
+              <Field
+                label=".claude目录"
+                value={ensureClaudeConfig(draft.config).claudeConfigDir}
+                onChange={(value) => set("config.claudeConfigDir", value)}
+                actionIcon={FolderOpen}
+                actionTitle="选择目录"
+                onAction={async () => {
+                  const selected = await chooseDirectory(ensureClaudeConfig(draft.config).claudeConfigDir || draft.workingDirectory);
+                  if (selected) set("config.claudeConfigDir", selected);
+                }}
+                wide
+              />
+            )}
+          </div>
 
           {draft.kind === "claude" ? <ClaudeEditor draft={draft} set={set} /> : <CodexEditor draft={draft} set={set} />}
-
-          <Panel title="高级">
-            <div className="grid grid-cols-2 gap-3">
-              <JsonField label="extraEnv" value={draft.config.extraEnv || {}} onChange={(value) => set("config.extraEnv", value)} />
-              {draft.kind === "codex" && <JsonField label="extraConfig (-c)" value={draft.config.extraConfig || {}} onChange={(value) => set("config.extraConfig", value)} />}
-              <ArrayField label="extraArgs" value={draft.config.extraArgs || []} onChange={(value) => set("config.extraArgs", value)} />
-            </div>
-          </Panel>
         </div>
       </div>
 
       <div className="mt-5 flex items-center justify-between border-t border-zinc-800 pt-4">
-        <button onClick={onDelete} className="inline-flex h-9 items-center gap-2 border border-zinc-700 bg-black px-3 text-sm text-zinc-300 transition hover:border-white hover:text-white">
+        <button onClick={onDelete} className="inline-flex h-9 items-center gap-2 rounded-sm border border-zinc-700 bg-black px-3 text-sm text-zinc-300 transition hover:border-white hover:text-white">
           <Trash2 size={15} />
           删除
         </button>
         <div className="flex gap-2">
           <ActionButton icon={X} label="取消" onClick={onClose} />
-          <ActionButton icon={Save} label="保存并生成脚本" onClick={onSave} primary />
+          <ActionButton icon={Save} label="保存 JSON" onClick={onSaveOnly} />
+          <ActionButton icon={Save} label="保存并同步 PS1" onClick={onSave} primary />
         </div>
       </div>
     </Modal>
   );
 }
 
-function ScriptModal({ path, text, setText, onClose, onSave }) {
+function ScriptModal({ path, text, setText, onClose, onSave, onSaveAndSync }) {
   return (
-    <Modal title="直接编辑启动脚本" onClose={onClose} wide>
+    <Modal title="直接编辑 PS1" onClose={onClose} wide>
       <div className="mb-2 truncate font-mono text-[11px] text-zinc-500">{path}</div>
       <textarea
         value={text}
         onChange={(event) => setText(event.target.value)}
         spellCheck={false}
-        className="h-[58vh] w-full resize-none border border-zinc-700 bg-black px-3 py-3 font-mono text-xs leading-5 text-white outline-none transition focus:border-white"
+        className="h-[58vh] w-full resize-none rounded-sm border border-zinc-700 bg-black px-3 py-3 font-mono text-xs leading-5 text-white outline-none transition focus:border-white"
       />
       <div className="mt-4 flex justify-end gap-2 border-t border-zinc-800 pt-4">
         <ActionButton icon={X} label="取消" onClick={onClose} />
-        <ActionButton icon={Save} label="保存脚本" onClick={onSave} primary />
+        <ActionButton icon={Save} label="保存并同步 JSON" onClick={onSaveAndSync} />
+        <ActionButton icon={Save} label="保存 PS1" onClick={onSave} primary />
       </div>
     </Modal>
   );
 }
 
 function ClaudeEditor({ draft, set }) {
-  const c = draft.config;
+  const c = ensureClaudeConfig(draft.config);
   return (
-    <Panel title="Claude">
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Base URL" value={c.baseUrl} onChange={(value) => set("config.baseUrl", value)} wide />
-        <SecretField label="Auth Token" value={c.authToken} onChange={(value) => set("config.authToken", value)} wide />
-        <Field label="ANTHROPIC_MODEL" value={c.model} onChange={(value) => set("config.model", value)} />
-        <Field label="ANTHROPIC_DEFAULT_SONNET_MODEL" value={c.sonnetModel} onChange={(value) => set("config.sonnetModel", value)} />
-        <Field label="ANTHROPIC_DEFAULT_OPUS_MODEL" value={c.opusModel} onChange={(value) => set("config.opusModel", value)} />
-        <Field label="ANTHROPIC_DEFAULT_HAIKU_MODEL" value={c.haikuModel} onChange={(value) => set("config.haikuModel", value)} />
-        <Field label="API_TIMEOUT_MS" value={c.timeoutMs} onChange={(value) => set("config.timeoutMs", numberValue(value))} />
-        <Toggle label="--dangerously-skip-permissions" checked={c.skipPermissions} onChange={(value) => set("config.skipPermissions", value)} />
-        <Toggle label="CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" checked={c.disableNonessentialTraffic} onChange={(value) => set("config.disableNonessentialTraffic", value)} />
-        <Toggle label="CLAUDE_CODE_USE_POWERSHELL_TOOL" checked={c.usePowershellTool} onChange={(value) => set("config.usePowershellTool", value)} />
+    <>
+      <SectionHeader label="连接" />
+      <div className="grid grid-cols-1 gap-3">
+        <Field label="Base URL" value={c.baseUrl} onChange={(value) => set("config.baseUrl", value)} />
+        <SecretField label="Auth Token" value={c.authToken} onChange={(value) => set("config.authToken", value)} />
       </div>
-    </Panel>
+
+      <SectionHeader label="模型" />
+      <div className="grid grid-cols-1 gap-3">
+        <Field label="ANTHROPIC_MODEL" value={c.models.main} onChange={(value) => set("config.models.main", value)} />
+        <Field label="ANTHROPIC_DEFAULT_SONNET_MODEL" value={c.models.sonnet} onChange={(value) => set("config.models.sonnet", value)} />
+        <Field label="ANTHROPIC_DEFAULT_OPUS_MODEL" value={c.models.opus} onChange={(value) => set("config.models.opus", value)} />
+        <Field label="ANTHROPIC_DEFAULT_HAIKU_MODEL" value={c.models.haiku} onChange={(value) => set("config.models.haiku", value)} />
+      </div>
+
+      <CollapsibleSection label="高级选项">
+        <div className="-mx-1">
+          <SelectField label="--setting-sources" value={c.launch.settingSources} options={["local", "user", "project"]} onChange={(value) => set("config.launch.settingSources", value)} />
+        </div>
+        <div className="px-1">
+          <SwitchRow
+            label="--dangerously-skip-permissions"
+            description="跳过所有权限确认提示，直接执行操作"
+            checked={c.launch.dangerouslySkipPermissions}
+            onChange={(value) => set("config.launch.dangerouslySkipPermissions", value)}
+          />
+          <SwitchRow
+            label="CLAUDE_CODE_USE_POWERSHELL_TOOL"
+            description="通过 PowerShell 执行所有命令，而非 Bash"
+            checked={c.advanced.usePowershellTool}
+            onChange={(value) => set("config.advanced.usePowershellTool", value)}
+          />
+          <SwitchRow
+            label="CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
+            description="禁止 Claude 发送遥测以外的非必要网络请求"
+            checked={c.advanced.disableNonessentialTraffic}
+            onChange={(value) => set("config.advanced.disableNonessentialTraffic", value)}
+          />
+          <SwitchRow
+            label="CLAUDE_CODE_DISABLE_TELEMETRY"
+            description="关闭所有遥测数据上报"
+            checked={c.advanced.disableTelemetry}
+            onChange={(value) => set("config.advanced.disableTelemetry", value)}
+          />
+          <SwitchRow
+            label="CLAUDE_CODE_DISABLE_AUTOUPDATER"
+            description="阻止 Claude CLI 自动检查并下载更新"
+            checked={c.advanced.disableAutoUpdater}
+            onChange={(value) => set("config.advanced.disableAutoUpdater", value)}
+          />
+        </div>
+        <div className="px-1">
+          <FieldRow
+            label="API_TIMEOUT_MS"
+            description="API 请求超时时间，单位毫秒"
+            value={c.advanced.apiTimeoutMs}
+            onChange={(value) => set("config.advanced.apiTimeoutMs", value)}
+          />
+          <FieldRow
+            label="BASH_DEFAULT_TIMEOUT_MS"
+            description="Bash 命令的默认执行超时时间"
+            value={c.advanced.bashDefaultTimeoutMs}
+            onChange={(value) => set("config.advanced.bashDefaultTimeoutMs", value)}
+          />
+          <FieldRow
+            label="BASH_MAX_TIMEOUT_MS"
+            description="Bash 命令允许的最大超时时间"
+            value={c.advanced.bashMaxTimeoutMs}
+            onChange={(value) => set("config.advanced.bashMaxTimeoutMs", value)}
+          />
+          <FieldRow
+            label="BASH_MAX_OUTPUT_LENGTH"
+            description="Bash 命令输出的最大字符数"
+            value={c.advanced.bashMaxOutputLength}
+            onChange={(value) => set("config.advanced.bashMaxOutputLength", value)}
+          />
+        </div>
+        <div className="px-1">
+          <ArrayField label="Extra Args" value={c.launch.extraArgs || []} onChange={(value) => set("config.launch.extraArgs", value)} />
+        </div>
+        <div className="px-1">
+          <JsonField label="Extra Env" value={c.advanced.extraEnv || {}} onChange={(value) => set("config.advanced.extraEnv", value)} />
+        </div>
+      </CollapsibleSection>
+    </>
   );
 }
 
 function CodexEditor({ draft, set }) {
   const c = draft.config;
   return (
-    <Panel title="Codex">
+    <>
+      <SectionHeader label="连接" />
       <div className="grid grid-cols-2 gap-3">
         <Field label="API Key Env" value={c.apiKeyEnvName} onChange={(value) => set("config.apiKeyEnvName", value)} />
         <SecretField label="API Key" value={c.apiKey} onChange={(value) => set("config.apiKey", value)} />
+        <Field label="base_url" value={c.provider.baseUrl} onChange={(value) => set("config.provider.baseUrl", value)} wide />
+      </div>
+
+      <SectionHeader label="模型" />
+      <div className="grid grid-cols-2 gap-3">
         <Field label="model_provider" value={c.provider.id} onChange={(value) => set("config.provider.id", slugify(value) || "custom")} />
         <Field label="Provider Name" value={c.provider.name} onChange={(value) => set("config.provider.name", value)} />
-        <Field label="base_url" value={c.provider.baseUrl} onChange={(value) => set("config.provider.baseUrl", value)} wide />
-        <SelectField label="wire_api" value={c.provider.wireApi} options={["responses", "chat"]} onChange={(value) => set("config.provider.wireApi", value)} />
         <Field label="model" value={c.model} onChange={(value) => set("config.model", value)} />
+        <SelectField label="wire_api" value={c.provider.wireApi} options={["responses", "chat"]} onChange={(value) => set("config.provider.wireApi", value)} />
         <SelectField label="model_reasoning_effort" value={c.reasoningEffort} options={["minimal", "low", "medium", "high"]} onChange={(value) => set("config.reasoningEffort", value)} />
-        <Toggle label="--ignore-user-config" checked={c.ignoreUserConfig} onChange={(value) => set("config.ignoreUserConfig", value)} />
-        <Toggle label="disable_response_storage" checked={c.disableResponseStorage} onChange={(value) => set("config.disableResponseStorage", value)} />
-        <Toggle label="features.apps" checked={c.appsEnabled} onChange={(value) => set("config.appsEnabled", value)} />
       </div>
-    </Panel>
+
+      <CollapsibleSection label="高级选项">
+        <div className="px-1">
+          <SwitchRow
+            label="--ignore-user-config"
+            description="忽略用户目录下的全局配置文件"
+            checked={c.ignoreUserConfig}
+            onChange={(value) => set("config.ignoreUserConfig", value)}
+          />
+          <SwitchRow
+            label="disable_response_storage"
+            description="禁止将响应数据写入本地存储"
+            checked={c.disableResponseStorage}
+            onChange={(value) => set("config.disableResponseStorage", value)}
+          />
+          <SwitchRow
+            label="features.apps"
+            description="启用 Codex Apps 功能模块"
+            checked={c.appsEnabled}
+            onChange={(value) => set("config.appsEnabled", value)}
+          />
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3 px-1">
+          <JsonField label="Extra Env" value={c.extraEnv || {}} onChange={(value) => set("config.extraEnv", value)} />
+          <JsonField label="Extra Config (-c)" value={c.extraConfig || {}} onChange={(value) => set("config.extraConfig", value)} />
+          <ArrayField label="Extra Args" value={c.extraArgs || []} onChange={(value) => set("config.extraArgs", value)} />
+        </div>
+      </CollapsibleSection>
+    </>
   );
 }
 
-function ProfileCard({ profile, active, onSelect, onLaunch, onScript, onDuplicate }) {
+function ProfileCard({ profile, active, onSelect, onLaunch, onScript, onCopyPath }) {
   const Icon = profile.kind === "claude" ? Bot : TerminalSquare;
   return (
-    <article className={`border p-4 transition ${active ? "border-white bg-zinc-900" : "border-zinc-800 bg-black hover:border-zinc-500"}`}>
+    <article className={`rounded-lg border p-4 transition ${active ? "border-white bg-zinc-900" : "border-zinc-800 bg-black hover:border-zinc-500"}`}>
       <button type="button" onClick={onSelect} className="block w-full text-left">
         <div className="flex items-start gap-3">
-          <div className="grid h-9 w-9 shrink-0 place-items-center border border-zinc-700 bg-zinc-950">
+          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-zinc-700 bg-zinc-950">
             <Icon size={17} className="text-zinc-200" />
           </div>
           <div className="min-w-0">
@@ -403,21 +684,22 @@ function ProfileCard({ profile, active, onSelect, onLaunch, onScript, onDuplicat
         </div>
       </button>
       <div className="mt-4 flex items-center justify-end gap-2 border-t border-zinc-800 pt-3">
-        <SmallIconButton icon={CopyPlus} title="复制配置" onClick={onDuplicate} />
-        <SmallIconButton icon={FileCode2} title="编辑启动脚本" onClick={onScript} />
+        <SmallIconButton icon={ClipboardCopy} title="Copy PS1 path" onClick={onCopyPath} />
+        <SmallIconButton icon={FileCode2} title="编辑 PS1" onClick={onScript} />
         <SmallIconButton icon={Play} title="启动" onClick={onLaunch} strong />
       </div>
     </article>
   );
 }
 
-function Modal({ title, onClose, children, wide }) {
+function Modal({ title, onClose, children, wide, compact }) {
+  const width = compact ? "max-w-lg" : wide ? "max-w-5xl" : "max-w-4xl";
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 px-5 py-5">
-      <div className={`max-h-full w-full border border-zinc-700 bg-black shadow-2xl ${wide ? "max-w-5xl" : "max-w-4xl"}`}>
+      <div className={`max-h-full w-full rounded-xl border border-zinc-700 bg-black shadow-2xl ${width}`}>
         <div className="flex h-12 items-center justify-between border-b border-zinc-800 px-4">
           <div className="truncate text-sm font-semibold text-white">{title}</div>
-          <button onClick={onClose} className="grid h-8 w-8 place-items-center border border-zinc-700 text-zinc-300 hover:border-white hover:text-white" title="关闭">
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-sm border border-zinc-700 text-zinc-300 hover:border-white hover:text-white" title="关闭">
             <X size={16} />
           </button>
         </div>
@@ -427,26 +709,24 @@ function Modal({ title, onClose, children, wide }) {
   );
 }
 
-function Panel({ title, children }) {
-  return (
-    <section className="border border-zinc-800 bg-zinc-950">
-      <div className="border-b border-zinc-800 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">{title}</div>
-      <div className="p-4">{children}</div>
-    </section>
-  );
-}
-
-function Field({ label, value, onChange, readOnly, wide }) {
+function Field({ label, value, onChange, readOnly, wide, actionIcon: ActionIcon, actionTitle, onAction }) {
   return (
     <label className={wide ? "col-span-2 block" : "block"}>
       <span className="mb-1 block text-xs text-zinc-400">{label}</span>
-      <input
-        type="text"
-        value={value ?? ""}
-        readOnly={readOnly}
-        onChange={(event) => onChange?.(event.target.value)}
-        className="h-9 w-full border border-zinc-700 bg-black px-3 text-sm text-white outline-none transition focus:border-white read-only:text-zinc-500"
-      />
+      <div className="flex h-9 rounded-sm border border-zinc-700 bg-black transition focus-within:border-white">
+        <input
+          type="text"
+          value={value ?? ""}
+          readOnly={readOnly}
+          onChange={(event) => onChange?.(event.target.value)}
+          className="min-w-0 flex-1 bg-transparent px-3 text-sm text-white outline-none read-only:text-zinc-500"
+        />
+        {ActionIcon && (
+          <button type="button" onClick={onAction} className="grid w-9 place-items-center text-zinc-400 hover:text-white" title={actionTitle}>
+            <ActionIcon size={15} />
+          </button>
+        )}
+      </div>
     </label>
   );
 }
@@ -456,7 +736,7 @@ function SecretField({ label, value, onChange, wide }) {
   return (
     <label className={wide ? "col-span-2 block" : "block"}>
       <span className="mb-1 block text-xs text-zinc-400">{label}</span>
-      <div className="flex h-9 border border-zinc-700 bg-black transition focus-within:border-white">
+      <div className="flex h-9 rounded-sm border border-zinc-700 bg-black transition focus-within:border-white">
         <input
           type={visible ? "text" : "password"}
           value={value ?? ""}
@@ -478,7 +758,7 @@ function SelectField({ label, value, options, onChange }) {
       <select
         value={value ?? ""}
         onChange={(event) => onChange(event.target.value)}
-        className="h-9 w-full border border-zinc-700 bg-black px-3 text-sm text-white outline-none transition focus:border-white"
+        className="h-9 w-full rounded-sm border border-zinc-700 bg-black px-3 text-sm text-white outline-none transition focus:border-white"
       >
         {options.map((option) => (
           <option key={option} value={option}>
@@ -492,9 +772,9 @@ function SelectField({ label, value, options, onChange }) {
 
 function Toggle({ label, checked, onChange }) {
   return (
-    <label className="flex h-9 items-center justify-between border border-zinc-700 bg-black px-3">
-      <span className="text-sm text-zinc-300">{label}</span>
-      <input type="checkbox" checked={!!checked} onChange={(event) => onChange(event.target.checked)} className="h-4 w-4 accent-white" />
+    <label className="flex h-9 items-center justify-between gap-3 rounded-sm border border-zinc-700 bg-black px-3">
+      <span className="truncate text-sm text-zinc-300">{label}</span>
+      <input type="checkbox" checked={!!checked} onChange={(event) => onChange(event.target.checked)} className="h-4 w-4 shrink-0 accent-white" />
     </label>
   );
 }
@@ -518,7 +798,7 @@ function JsonField({ label, value, onChange }) {
         }}
         rows={5}
         spellCheck={false}
-        className="w-full resize-y border border-zinc-700 bg-black px-3 py-2 font-mono text-xs leading-5 text-white outline-none transition focus:border-white"
+        className="w-full resize-y rounded-sm border border-zinc-700 bg-black px-3 py-2 font-mono text-xs leading-5 text-white outline-none transition focus:border-white"
       />
     </label>
   );
@@ -531,7 +811,7 @@ function ArrayField({ label, value, onChange }) {
       <input
         value={(value || []).join(" ")}
         onChange={(event) => onChange(event.target.value.split(" ").map((x) => x.trim()).filter(Boolean))}
-        className="h-9 w-full border border-zinc-700 bg-black px-3 font-mono text-xs text-white outline-none transition focus:border-white"
+        className="h-9 w-full rounded-sm border border-zinc-700 bg-black px-3 font-mono text-xs text-white outline-none transition focus:border-white"
       />
     </label>
   );
@@ -541,7 +821,7 @@ function FilterButton({ active, icon: Icon, label, count, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`flex h-10 w-full items-center justify-between border px-3 text-sm transition ${
+      className={`flex h-10 w-full items-center justify-between rounded-sm border px-3 text-sm transition ${
         active ? "border-white bg-zinc-900 text-white" : "border-transparent text-zinc-400 hover:bg-zinc-900 hover:text-white"
       }`}
     >
@@ -556,7 +836,7 @@ function FilterButton({ active, icon: Icon, label, count, onClick }) {
 
 function IconButton({ icon: Icon, label, onClick }) {
   return (
-    <button onClick={onClick} className="mb-2 flex h-9 w-full items-center gap-2 border border-zinc-700 bg-black px-3 text-sm text-zinc-300 transition hover:border-white hover:text-white">
+    <button onClick={onClick} className="mb-2 flex h-9 w-full items-center gap-2 rounded-sm border border-zinc-700 bg-black px-3 text-sm text-zinc-300 transition hover:border-white hover:text-white">
       <Icon size={15} />
       {label}
     </button>
@@ -571,7 +851,7 @@ function SmallIconButton({ icon: Icon, title, onClick, strong }) {
         event.stopPropagation();
         onClick();
       }}
-      className={`grid h-8 w-8 place-items-center border transition ${
+      className={`grid h-8 w-8 place-items-center rounded-sm border transition ${
         strong ? "border-white bg-white text-black hover:bg-zinc-200" : "border-zinc-700 bg-black text-zinc-300 hover:border-white hover:text-white"
       }`}
       title={title}
@@ -586,7 +866,7 @@ function ActionButton({ icon: Icon, label, onClick, disabled, primary }) {
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex h-9 items-center gap-2 border px-3 text-sm transition disabled:cursor-not-allowed disabled:opacity-45 ${
+      className={`inline-flex h-9 items-center gap-2 rounded-sm border px-3 text-sm transition disabled:cursor-not-allowed disabled:opacity-45 ${
         primary ? "border-white bg-white text-black hover:bg-zinc-200" : "border-zinc-700 bg-black text-zinc-300 hover:border-white hover:text-white"
       }`}
     >
@@ -605,15 +885,43 @@ function TitleBar() {
   );
 }
 
+function withUniqueId(profile, kind, name) {
+  const suffix = Date.now().toString().slice(-5);
+  profile.id = `${kind}-${suffix}`;
+  profile.name = `${name} ${suffix}`;
+  return profile;
+}
+
 function keyOf(profile) {
   return `${profile.kind}:${profile.id}`;
 }
 
 function summary(profile) {
   if (profile.kind === "claude") {
-    return `${profile.config.model || "model"} / ${profile.config.baseUrl || "no base url"}`;
+    const model = profile.config?.models?.main || "未设置模型";
+    return `${model} / ${profile.config?.baseUrl || "no base url"}`;
   }
   return `${profile.config.model || "model"} / ${profile.config.provider?.name || "provider"}`;
+}
+
+function ensureClaudeConfig(config) {
+  return {
+    ...config,
+    claudeConfigDir: config.claudeConfigDir || "",
+    models: config.models || { main: "", sonnet: "", opus: "", haiku: "" },
+    launch: config.launch || { settingSources: "local", dangerouslySkipPermissions: true, extraArgs: [] },
+    advanced: config.advanced || {
+      apiTimeoutMs: "3000000",
+      usePowershellTool: true,
+      disableNonessentialTraffic: true,
+      disableTelemetry: false,
+      disableAutoUpdater: false,
+      bashDefaultTimeoutMs: "",
+      bashMaxTimeoutMs: "",
+      bashMaxOutputLength: "",
+      extraEnv: {},
+    },
+  };
 }
 
 function assignPath(target, path, value) {
@@ -633,11 +941,6 @@ function slugify(value) {
     .replace(/\s+/g, "-")
     .replace(/[^A-Za-z0-9_-]/g, "")
     .toLowerCase();
-}
-
-function numberValue(value) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 createRoot(document.getElementById("root")).render(<App />);

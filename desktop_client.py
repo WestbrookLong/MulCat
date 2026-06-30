@@ -17,6 +17,8 @@ from profile_manager import (
     launch_profile,
     load_profiles,
     save_profile,
+    save_profile_only,
+    save_script_and_sync_profile,
     script_path,
 )
 
@@ -71,6 +73,17 @@ class DesktopApi:
                 self.last_message = f"Save failed: {exc}"
             return self._state()
 
+    def save_profile_only(self, profile: dict) -> dict:
+        with self.lock:
+            try:
+                saved = save_profile_only(profile)
+                self.last_message = f"Saved JSON {saved['id']}."
+            except ProfileError as exc:
+                self.last_message = str(exc)
+            except Exception as exc:
+                self.last_message = f"Save JSON failed: {exc}"
+            return self._state()
+
     def delete_profile(self, kind: str, profile_id: str) -> dict:
         with self.lock:
             try:
@@ -117,6 +130,17 @@ class DesktopApi:
                 self.last_message = f"Save script failed: {exc}"
             return self._state()
 
+    def save_script_and_sync(self, kind: str, profile_id: str, text: str) -> dict:
+        with self.lock:
+            try:
+                saved = save_script_and_sync_profile(kind, profile_id, text)
+                self.last_message = f"Saved script and synced {saved['id']}."
+            except ProfileError as exc:
+                self.last_message = str(exc)
+            except Exception as exc:
+                self.last_message = f"Sync script failed: {exc}"
+            return self._state()
+
     def launch_profile(self, kind: str, profile_id: str) -> dict:
         with self.lock:
             result = launch_profile(kind, profile_id)
@@ -131,6 +155,36 @@ class DesktopApi:
         else:
             subprocess.Popen(["xdg-open", str(SCRIPTS_DIR)], close_fds=True)
         return self._state()
+
+    def copy_text(self, text: str) -> dict:
+        with self.lock:
+            try:
+                subprocess.run(
+                    ["powershell.exe", "-NoProfile", "-Command", "Set-Clipboard -Value $args[0]", str(text)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                self.last_message = "Copied to clipboard."
+            except Exception as exc:
+                self.last_message = f"Copy failed: {exc}"
+            return self._state()
+
+    def choose_directory(self, initial_directory: str = "") -> dict:
+        with self.lock:
+            try:
+                if self._window is None:
+                    self.last_message = "Window is not ready."
+                    return {**self._state(), "selectedDirectory": ""}
+                file_dialog = getattr(webview, "FileDialog", None)
+                dialog_type = file_dialog.FOLDER if file_dialog is not None else webview.FOLDER_DIALOG
+                paths = self._window.create_file_dialog(dialog_type, directory=str(initial_directory or APP_DIR))
+                selected = paths[0] if paths else ""
+                return {**self._state(), "selectedDirectory": selected}
+            except Exception as exc:
+                self.last_message = f"Choose directory failed: {exc}"
+                return {**self._state(), "selectedDirectory": ""}
 
     def minimize_window(self) -> dict:
         if self._window is not None:

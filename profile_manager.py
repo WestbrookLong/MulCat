@@ -1,6 +1,5 @@
-from __future__ import annotations
-
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -47,22 +46,7 @@ def profile_path(kind: str, profile_id: str) -> Path:
 def script_path(kind: str, profile_id: str) -> Path:
     safe_kind = validate_kind(kind)
     safe_id = validate_id(profile_id)
-    return SCRIPTS_DIR / safe_kind / f"{safe_id}{script_extension()}"
-
-
-def script_extension() -> str:
-    if sys.platform == "darwin":
-        return ".command"
-    return ".ps1"
-
-
-def script_paths(kind: str, profile_id: str) -> list[Path]:
-    safe_kind = validate_kind(kind)
-    safe_id = validate_id(profile_id)
-    return [
-        SCRIPTS_DIR / safe_kind / f"{safe_id}.ps1",
-        SCRIPTS_DIR / safe_kind / f"{safe_id}.command",
-    ]
+    return SCRIPTS_DIR / safe_kind / f"{safe_id}.ps1"
 
 
 def validate_kind(kind: str) -> str:
@@ -87,7 +71,7 @@ def load_profiles() -> list[dict[str, Any]]:
     for kind in ("claude", "codex"):
         for path in sorted((PROFILES_DIR / kind).glob("*.json")):
             with path.open("r", encoding="utf-8") as handle:
-                profile = json.load(handle)
+                profile = normalize_profile(json.load(handle))
             profile["_jsonPath"] = str(path)
             profile["_scriptPath"] = str(script_path(profile["kind"], profile["id"]))
             profiles.append(profile)
@@ -102,10 +86,36 @@ def save_profile(profile: dict[str, Any]) -> dict[str, Any]:
     return {**normalized, "_jsonPath": str(path), "_scriptPath": str(script)}
 
 
+def save_profile_only(profile: dict[str, Any]) -> dict[str, Any]:
+    normalized = normalize_profile(profile)
+    path = profile_path(normalized["kind"], normalized["id"])
+    path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {**normalized, "_jsonPath": str(path), "_scriptPath": str(script_path(normalized["kind"], normalized["id"]))}
+
+
+def save_script_and_sync_profile(kind: str, profile_id: str, text: str) -> dict[str, Any]:
+    safe_kind = validate_kind(kind)
+    safe_id = validate_id(profile_id)
+    script = script_path(safe_kind, safe_id)
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text(str(text), encoding="utf-8-sig")
+
+    path = profile_path(safe_kind, safe_id)
+    if not path.exists():
+        raise ProfileError(f"Profile does not exist: {safe_id}.")
+    profile = normalize_profile(json.loads(path.read_text(encoding="utf-8")))
+    if safe_kind == "claude":
+        profile = sync_claude_script_to_profile(profile, str(text))
+    else:
+        profile = sync_codex_script_to_profile(profile, str(text))
+    normalized = normalize_profile(profile)
+    path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {**normalized, "_jsonPath": str(path), "_scriptPath": str(script)}
+
+
 def delete_profile(kind: str, profile_id: str) -> None:
     profile_path(kind, profile_id).unlink(missing_ok=True)
-    for path in script_paths(kind, profile_id):
-        path.unlink(missing_ok=True)
+    script_path(kind, profile_id).unlink(missing_ok=True)
 
 
 def normalize_profile(profile: dict[str, Any]) -> dict[str, Any]:
@@ -121,6 +131,7 @@ def normalize_profile(profile: dict[str, Any]) -> dict[str, Any]:
         "id": profile_id,
         "name": name,
         "kind": kind,
+        "provider": str(profile.get("provider") or ""),
         "enabled": bool(profile.get("enabled", True)),
         "workingDirectory": working_directory,
         "terminal": profile.get("terminal") or {"mode": "windows-terminal", "keepOpen": True},
@@ -134,20 +145,43 @@ def normalize_profile(profile: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_claude_config(config: dict[str, Any]) -> dict[str, Any]:
-    model = str(config.get("model") or "sonnet")
+    models = dict(config.get("models") or {})
+    launch = dict(config.get("launch") or {})
+    advanced = dict(config.get("advanced") or {})
+
+    old_model = str(config.get("model") or "")
+    old_sonnet = str(config.get("sonnetModel") or "")
+    old_opus = str(config.get("opusModel") or "")
+    old_haiku = str(config.get("haikuModel") or "")
+    if "models" not in config and {old_model, old_sonnet, old_opus, old_haiku} == {"sonnet"}:
+        old_model = old_sonnet = old_opus = old_haiku = ""
+
     return {
         "baseUrl": str(config.get("baseUrl") or ""),
         "authToken": str(config.get("authToken") or ""),
-        "model": model,
-        "sonnetModel": str(config.get("sonnetModel") or model),
-        "opusModel": str(config.get("opusModel") or model),
-        "haikuModel": str(config.get("haikuModel") or model),
-        "timeoutMs": int(config.get("timeoutMs") or 3000000),
-        "disableNonessentialTraffic": bool(config.get("disableNonessentialTraffic", True)),
-        "usePowershellTool": bool(config.get("usePowershellTool", True)),
-        "skipPermissions": bool(config.get("skipPermissions", True)),
-        "extraEnv": dict(config.get("extraEnv") or {}),
-        "extraArgs": list(config.get("extraArgs") or []),
+        "claudeConfigDir": str(config.get("claudeConfigDir") or ""),
+        "models": {
+            "main": str(models.get("main") or old_model),
+            "sonnet": str(models.get("sonnet") or old_sonnet),
+            "opus": str(models.get("opus") or old_opus),
+            "haiku": str(models.get("haiku") or old_haiku),
+        },
+        "launch": {
+            "settingSources": str(launch.get("settingSources") or config.get("settingSources") or "local"),
+            "dangerouslySkipPermissions": bool(launch.get("dangerouslySkipPermissions", config.get("skipPermissions", True))),
+            "extraArgs": list(launch.get("extraArgs") or config.get("extraArgs") or []),
+        },
+        "advanced": {
+            "apiTimeoutMs": str(advanced.get("apiTimeoutMs") or config.get("timeoutMs") or "3000000"),
+            "usePowershellTool": bool(advanced.get("usePowershellTool", config.get("usePowershellTool", True))),
+            "disableNonessentialTraffic": bool(advanced.get("disableNonessentialTraffic", config.get("disableNonessentialTraffic", True))),
+            "disableTelemetry": bool(advanced.get("disableTelemetry", config.get("disableTelemetry", False))),
+            "disableAutoUpdater": bool(advanced.get("disableAutoUpdater", config.get("disableAutoUpdater", False))),
+            "bashDefaultTimeoutMs": str(advanced.get("bashDefaultTimeoutMs") or ""),
+            "bashMaxTimeoutMs": str(advanced.get("bashMaxTimeoutMs") or ""),
+            "bashMaxOutputLength": str(advanced.get("bashMaxOutputLength") or ""),
+            "extraEnv": dict(advanced.get("extraEnv") or config.get("extraEnv") or {}),
+        },
     }
 
 
@@ -183,43 +217,70 @@ def generate_all_scripts() -> list[str]:
 
 def generate_script(profile: dict[str, Any]) -> Path:
     normalized = normalize_profile(profile)
-    if sys.platform == "darwin":
-        content = generate_shell_script(normalized)
-    elif normalized["kind"] == "claude":
+    if normalized["kind"] == "claude":
         content = generate_claude_script(normalized)
     else:
         content = generate_codex_script(normalized)
     path = script_path(normalized["kind"], normalized["id"])
-    if sys.platform == "darwin":
-        path.write_text(content, encoding="utf-8")
-        path.chmod(path.stat().st_mode | 0o111)
-    else:
-        path.write_text(content, encoding="utf-8-sig")
+    path.write_text(content, encoding="utf-8-sig")
     return path
 
 
 def generate_claude_script(profile: dict[str, Any]) -> str:
     config = profile["config"]
-    env = {
-        "ANTHROPIC_BASE_URL": config["baseUrl"],
-        "ANTHROPIC_AUTH_TOKEN": config["authToken"],
-        "ANTHROPIC_MODEL": config["model"],
-        "ANTHROPIC_DEFAULT_SONNET_MODEL": config["sonnetModel"],
-        "ANTHROPIC_DEFAULT_OPUS_MODEL": config["opusModel"],
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL": config["haikuModel"],
-        "API_TIMEOUT_MS": str(config["timeoutMs"]),
-        **{str(k): str(v) for k, v in config.get("extraEnv", {}).items()},
-    }
-    if config["disableNonessentialTraffic"]:
-        env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
-    if config["usePowershellTool"]:
-        env["CLAUDE_CODE_USE_POWERSHELL_TOOL"] = "1"
+    models = config.get("models", {})
+    launch = config.get("launch", {})
+    advanced = config.get("advanced", {})
 
-    args = ["--dangerously-skip-permissions"] if config["skipPermissions"] else []
-    args.extend(str(arg) for arg in config.get("extraArgs", []))
-    lines = script_header(profile)
-    lines.extend(env_lines(env))
-    command = "claude" + ps_args(args)
+    lines = claude_script_header(profile)
+    lines.extend(
+        env_lines(
+            {
+                "CLAUDE_CONFIG_DIR": config.get("claudeConfigDir", ""),
+                "ANTHROPIC_AUTH_TOKEN": config["authToken"],
+                "ANTHROPIC_BASE_URL": config["baseUrl"],
+            },
+            quote=ps_double_quote,
+        )
+    )
+
+    model_env = {
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": models.get("haiku", ""),
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": models.get("opus", ""),
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": models.get("sonnet", ""),
+        "ANTHROPIC_MODEL": models.get("main", ""),
+    }
+    if any(str(value) for value in model_env.values()):
+        lines.extend(env_lines(model_env, quote=ps_double_quote))
+
+    advanced_env = {
+        "API_TIMEOUT_MS": advanced.get("apiTimeoutMs", ""),
+    }
+    if advanced.get("disableNonessentialTraffic"):
+        advanced_env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+    if advanced.get("usePowershellTool"):
+        advanced_env["CLAUDE_CODE_USE_POWERSHELL_TOOL"] = "1"
+    if advanced.get("disableTelemetry"):
+        advanced_env["CLAUDE_CODE_DISABLE_TELEMETRY"] = "1"
+    if advanced.get("disableAutoUpdater"):
+        advanced_env["CLAUDE_CODE_DISABLE_AUTOUPDATER"] = "1"
+    advanced_env.update(
+        {
+            "BASH_DEFAULT_TIMEOUT_MS": advanced.get("bashDefaultTimeoutMs", ""),
+            "BASH_MAX_TIMEOUT_MS": advanced.get("bashMaxTimeoutMs", ""),
+            "BASH_MAX_OUTPUT_LENGTH": advanced.get("bashMaxOutputLength", ""),
+        }
+    )
+    advanced_env.update({str(k): str(v) for k, v in advanced.get("extraEnv", {}).items()})
+    lines.extend(env_lines(advanced_env, quote=ps_double_quote))
+
+    args = []
+    if launch.get("settingSources"):
+        args.extend(["--setting-sources", str(launch["settingSources"])])
+    if launch.get("dangerouslySkipPermissions"):
+        args.append("--dangerously-skip-permissions")
+    args.extend(str(arg) for arg in launch.get("extraArgs", []))
+    command = "claude" + ps_args(args, quote=ps_arg_quote)
     lines.append(command)
     return "\n".join(lines) + "\n"
 
@@ -257,71 +318,273 @@ def generate_codex_script(profile: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def generate_shell_script(profile: dict[str, Any]) -> str:
-    if profile["kind"] == "claude":
-        return generate_claude_shell_script(profile)
-    return generate_codex_shell_script(profile)
+def sync_claude_script_to_profile(profile: dict[str, Any], text: str) -> dict[str, Any]:
+    next_profile = normalize_profile(profile)
+    parsed = parse_ps1(text)
+    if parsed["workingDirectory"]:
+        next_profile["workingDirectory"] = parsed["workingDirectory"]
 
+    config = next_profile["config"]
+    advanced = config["advanced"]
+    models = config["models"]
+    launch = config["launch"]
+    extra_env = dict(advanced.get("extraEnv") or {})
 
-def generate_claude_shell_script(profile: dict[str, Any]) -> str:
-    config = profile["config"]
-    env = {
-        "ANTHROPIC_BASE_URL": config["baseUrl"],
-        "ANTHROPIC_AUTH_TOKEN": config["authToken"],
-        "ANTHROPIC_MODEL": config["model"],
-        "ANTHROPIC_DEFAULT_SONNET_MODEL": config["sonnetModel"],
-        "ANTHROPIC_DEFAULT_OPUS_MODEL": config["opusModel"],
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL": config["haikuModel"],
-        "API_TIMEOUT_MS": str(config["timeoutMs"]),
-        **{str(k): str(v) for k, v in config.get("extraEnv", {}).items()},
+    env_map = {
+        "CLAUDE_CONFIG_DIR": ("config", "claudeConfigDir"),
+        "ANTHROPIC_AUTH_TOKEN": ("config", "authToken"),
+        "ANTHROPIC_BASE_URL": ("config", "baseUrl"),
+        "ANTHROPIC_MODEL": ("models", "main"),
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": ("models", "sonnet"),
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": ("models", "opus"),
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": ("models", "haiku"),
+        "API_TIMEOUT_MS": ("advanced", "apiTimeoutMs"),
+        "BASH_DEFAULT_TIMEOUT_MS": ("advanced", "bashDefaultTimeoutMs"),
+        "BASH_MAX_TIMEOUT_MS": ("advanced", "bashMaxTimeoutMs"),
+        "BASH_MAX_OUTPUT_LENGTH": ("advanced", "bashMaxOutputLength"),
     }
-    if config["disableNonessentialTraffic"]:
-        env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
-    if config["usePowershellTool"]:
-        env["CLAUDE_CODE_USE_POWERSHELL_TOOL"] = "1"
+    bool_env_map = {
+        "CLAUDE_CODE_USE_POWERSHELL_TOOL": "usePowershellTool",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "disableNonessentialTraffic",
+        "CLAUDE_CODE_DISABLE_TELEMETRY": "disableTelemetry",
+        "CLAUDE_CODE_DISABLE_AUTOUPDATER": "disableAutoUpdater",
+    }
+    for key, value in parsed["env"].items():
+        if key in env_map:
+            scope, target = env_map[key]
+            if scope == "config":
+                config[target] = value
+            elif scope == "models":
+                models[target] = value
+            else:
+                advanced[target] = value
+        elif key in bool_env_map:
+            parsed_bool = parse_bool(value)
+            if parsed_bool is not None:
+                advanced[bool_env_map[key]] = parsed_bool
+        else:
+            extra_env[key] = value
+    advanced["extraEnv"] = extra_env
 
-    args = ["--dangerously-skip-permissions"] if config["skipPermissions"] else []
-    args.extend(str(arg) for arg in config.get("extraArgs", []))
-    lines = shell_header(profile)
-    lines.extend(shell_env_lines(env))
-    lines.append(shell_command(["claude", *args]))
-    lines.extend(shell_footer())
-    return "\n".join(lines) + "\n"
+    args = parsed["commands"].get("claude")
+    if args:
+        extra_args = []
+        index = 0
+        while index < len(args):
+            arg = args[index]
+            if arg == "--setting-sources" and index + 1 < len(args):
+                launch["settingSources"] = args[index + 1]
+                index += 2
+            elif arg == "--dangerously-skip-permissions":
+                launch["dangerouslySkipPermissions"] = True
+                index += 1
+            else:
+                extra_args.append(arg)
+                index += 1
+        launch["extraArgs"] = extra_args
+    return next_profile
 
 
-def generate_codex_shell_script(profile: dict[str, Any]) -> str:
-    config = profile["config"]
+def sync_codex_script_to_profile(profile: dict[str, Any], text: str) -> dict[str, Any]:
+    next_profile = normalize_profile(profile)
+    parsed = parse_ps1(text)
+    if parsed["workingDirectory"]:
+        next_profile["workingDirectory"] = parsed["workingDirectory"]
+
+    config = next_profile["config"]
     provider = config["provider"]
-    env = {config["apiKeyEnvName"]: config["apiKey"]}
-    env.update({str(k): str(v) for k, v in config.get("extraEnv", {}).items()})
+    extra_env = dict(config.get("extraEnv") or {})
+    api_key_env_name = config["apiKeyEnvName"]
+    for key, value in parsed["env"].items():
+        if key == api_key_env_name:
+            config["apiKey"] = value
+        else:
+            extra_env[key] = value
+    config["extraEnv"] = extra_env
 
-    provider_id = provider["id"]
-    c_values: dict[str, Any] = {
-        "model_provider": provider_id,
-        "model": config["model"],
-        "model_reasoning_effort": config["reasoningEffort"],
-        "disable_response_storage": config["disableResponseStorage"],
-        "features.apps": config["appsEnabled"],
-        f"model_providers.{provider_id}.name": provider["name"],
-        f"model_providers.{provider_id}.base_url": provider["baseUrl"],
-        f"model_providers.{provider_id}.env_key": config["apiKeyEnvName"],
-        f"model_providers.{provider_id}.wire_api": provider["wireApi"],
-    }
-    c_values.update(config.get("extraConfig", {}))
+    args = parsed["commands"].get("codex")
+    if not args:
+        return next_profile
 
-    parts = ["codex"]
-    if config["ignoreUserConfig"]:
-        parts.append("--ignore-user-config")
-    parts.extend(str(arg) for arg in config.get("extraArgs", []))
-    for key, value in c_values.items():
-        parts.append("-c")
-        parts.append(toml_assignment(key, value))
+    extra_args = []
+    extra_config = dict(config.get("extraConfig") or {})
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--ignore-user-config":
+            config["ignoreUserConfig"] = True
+            index += 1
+        elif arg == "-c" and index + 1 < len(args):
+            key, value = parse_assignment(args[index + 1])
+            if key:
+                apply_codex_config_value(config, provider, extra_config, key, value)
+            index += 2
+        else:
+            extra_args.append(arg)
+            index += 1
+    if config["apiKeyEnvName"] in extra_env:
+        config["apiKey"] = str(extra_env.pop(config["apiKeyEnvName"]))
+    config["extraArgs"] = extra_args
+    config["extraConfig"] = extra_config
+    config["extraEnv"] = extra_env
+    return next_profile
 
-    lines = shell_header(profile)
-    lines.extend(shell_env_lines(env))
-    lines.append(shell_multiline_command(parts))
-    lines.extend(shell_footer())
-    return "\n".join(lines) + "\n"
+
+def apply_codex_config_value(config: dict[str, Any], provider: dict[str, Any], extra_config: dict[str, Any], key: str, value: Any) -> None:
+    if key == "model_provider":
+        provider["id"] = str(value)
+    elif key == "model":
+        config["model"] = str(value)
+    elif key == "model_reasoning_effort":
+        config["reasoningEffort"] = str(value)
+    elif key == "disable_response_storage":
+        config["disableResponseStorage"] = bool(value)
+    elif key == "features.apps":
+        config["appsEnabled"] = bool(value)
+    elif key.startswith("model_providers.") and key.endswith(".name"):
+        provider["name"] = str(value)
+    elif key.startswith("model_providers.") and key.endswith(".base_url"):
+        provider["baseUrl"] = str(value)
+    elif key.startswith("model_providers.") and key.endswith(".env_key"):
+        config["apiKeyEnvName"] = str(value)
+    elif key.startswith("model_providers.") and key.endswith(".wire_api"):
+        provider["wireApi"] = str(value)
+    else:
+        extra_config[key] = value
+
+
+def parse_ps1(text: str) -> dict[str, Any]:
+    env: dict[str, str] = {}
+    commands: dict[str, list[str]] = {}
+    working_directory = ""
+    for line in join_ps_continuations(text).splitlines():
+        stripped = strip_ps_comment(line).strip()
+        if not stripped:
+            continue
+        location = parse_location_line(stripped)
+        if location:
+            working_directory = location
+            continue
+        env_match = re.match(r"^\$env:([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*$", stripped)
+        if env_match:
+            env[env_match.group(1)] = parse_ps_value(env_match.group(2))
+            continue
+        tokens = ps_tokenize(stripped)
+        if tokens and tokens[0].lower() in {"claude", "codex"}:
+            commands[tokens[0].lower()] = tokens[1:]
+    return {"workingDirectory": working_directory, "env": env, "commands": commands}
+
+
+def join_ps_continuations(text: str) -> str:
+    lines = []
+    current = ""
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        if line.endswith("`"):
+            current += line[:-1] + " "
+        else:
+            lines.append(current + line)
+            current = ""
+    if current:
+        lines.append(current)
+    return "\n".join(lines)
+
+
+def strip_ps_comment(line: str) -> str:
+    in_single = False
+    in_double = False
+    index = 0
+    while index < len(line):
+        ch = line[index]
+        if ch == "'" and not in_double:
+            in_single = not in_single
+        elif ch == '"' and not in_single:
+            in_double = not in_double
+        elif ch == "#" and not in_single and not in_double:
+            return line[:index]
+        index += 1
+    return line
+
+
+def parse_location_line(line: str) -> str:
+    tokens = ps_tokenize(line)
+    if len(tokens) >= 2 and tokens[0].lower() in {"cd", "set-location"}:
+        return tokens[1]
+    return ""
+
+
+def parse_ps_value(value: str) -> str:
+    tokens = ps_tokenize(value)
+    return tokens[0] if tokens else value.strip()
+
+
+def ps_tokenize(line: str) -> list[str]:
+    tokens: list[str] = []
+    current = ""
+    quote = ""
+    index = 0
+    while index < len(line):
+        ch = line[index]
+        if quote:
+            if quote == '"' and ch == "`" and index + 1 < len(line):
+                current += line[index + 1]
+                index += 2
+                continue
+            if ch == quote:
+                quote = ""
+            else:
+                current += ch
+        else:
+            if ch in {"'", '"'}:
+                quote = ch
+            elif ch.isspace():
+                if current:
+                    tokens.append(current)
+                    current = ""
+            else:
+                current += ch
+        index += 1
+    if current:
+        tokens.append(current)
+    return tokens
+
+
+def parse_bool(value: Any) -> bool | None:
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off", ""}:
+        return False
+    return None
+
+
+def parse_assignment(value: str) -> tuple[str, Any]:
+    if "=" not in value:
+        return "", ""
+    key, raw = value.split("=", 1)
+    return key.strip(), parse_toml_scalar(raw.strip())
+
+
+def parse_toml_scalar(value: str) -> Any:
+    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+        return value[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+    lowered = value.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    try:
+        return int(value)
+    except ValueError:
+        return value
+
+
+def claude_script_header(profile: dict[str, Any]) -> list[str]:
+    return [
+        f"# Generated by MulCat from profiles/{profile['kind']}/{profile['id']}.json",
+        f"cd {ps_double_quote(profile['workingDirectory'])}",
+        "",
+    ]
 
 
 def script_header(profile: dict[str, Any]) -> list[str]:
@@ -333,52 +596,13 @@ def script_header(profile: dict[str, Any]) -> list[str]:
     ]
 
 
-def shell_header(profile: dict[str, Any]) -> list[str]:
-    return [
-        "#!/bin/bash",
-        f"# Generated by MulCat from profiles/{profile['kind']}/{profile['id']}.json",
-        f"cd {sh_quote(profile['workingDirectory'])} || exit 1",
-        "",
-    ]
-
-
-def shell_env_lines(env: dict[str, str]) -> list[str]:
+def env_lines(env: dict[str, str], quote=None) -> list[str]:
+    if quote is None:
+        quote = ps_quote
     lines = []
     for key, value in env.items():
         if value != "":
-            lines.append(f"export {key}={sh_quote(value)}")
-    lines.append("")
-    return lines
-
-
-def shell_command(parts: list[str]) -> str:
-    return " ".join(sh_quote(part) for part in parts)
-
-
-def shell_multiline_command(parts: list[str]) -> str:
-    rendered = []
-    for index, part in enumerate(parts):
-        suffix = " \\" if index < len(parts) - 1 else ""
-        rendered.append(f"  {sh_quote(part)}{suffix}" if index else f"{sh_quote(part)}{suffix}")
-    return "\n".join(rendered)
-
-
-def shell_footer() -> list[str]:
-    return [
-        "status=$?",
-        "echo",
-        'echo "MulCat command exited with status ${status}."',
-        'echo "Press Return to close this window..."',
-        "read -r _",
-        "exit ${status}",
-    ]
-
-
-def env_lines(env: dict[str, str]) -> list[str]:
-    lines = []
-    for key, value in env.items():
-        if value != "":
-            lines.append(f"$env:{key} = {ps_quote(value)}")
+            lines.append(f"$env:{key} = {quote(value)}")
     lines.append("")
     return lines
 
@@ -387,14 +611,21 @@ def ps_quote(value: Any) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def sh_quote(value: Any) -> str:
-    return "'" + str(value).replace("'", "'\"'\"'") + "'"
+def ps_double_quote(value: Any) -> str:
+    return '"' + str(value).replace("`", "``").replace('"', '`"') + '"'
 
 
-def ps_args(args: list[str]) -> str:
+def ps_arg_quote(value: Any) -> str:
+    text = str(value)
+    if text and all(ch not in text for ch in " \t\r\n\"'`"):
+        return text
+    return ps_double_quote(text)
+
+
+def ps_args(args: list[str], quote=ps_quote) -> str:
     if not args:
         return ""
-    return " " + " ".join(ps_quote(arg) for arg in args)
+    return " " + " ".join(quote(arg) for arg in args)
 
 
 def ps_multiline_command(parts: list[str]) -> str:
@@ -424,39 +655,36 @@ def launch_profile(kind: str, profile_id: str) -> LaunchResult:
         path = generate_script(profile)
 
     try:
-        if sys.platform == "darwin":
-            path.chmod(path.stat().st_mode | 0o111)
-            subprocess.Popen(["open", str(path)], cwd=str(APP_DIR), close_fds=True)
+        wt = shutil.which("wt.exe") or shutil.which("wt")
+        if wt:
+            subprocess.Popen(
+                [
+                    wt,
+                    "new-tab",
+                    "powershell.exe",
+                    "-NoExit",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(path),
+                ],
+                cwd=str(APP_DIR),
+                close_fds=True,
+            )
         else:
-            wt = shutil.which("wt.exe") or shutil.which("wt")
-            if wt:
-                subprocess.Popen(
-                    [
-                        wt,
-                        "new-tab",
-                        "powershell.exe",
-                        "-NoExit",
-                        "-ExecutionPolicy",
-                        "Bypass",
-                        "-File",
-                        str(path),
-                    ],
-                    cwd=str(APP_DIR),
-                    close_fds=True,
-                )
-            else:
-                subprocess.Popen(
-                    [
-                        "powershell.exe",
-                        "-NoExit",
-                        "-ExecutionPolicy",
-                        "Bypass",
-                        "-File",
-                        str(path),
-                    ],
-                    cwd=str(APP_DIR),
-                    close_fds=True,
-                )
+            subprocess.Popen(
+                [
+                    "powershell.exe",
+                    "-NoExit",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(path),
+                ],
+                cwd=str(APP_DIR),
+                close_fds=True,
+            )
         return LaunchResult(True, f"Launched {profile_id}.", str(path))
     except Exception as exc:
         return LaunchResult(False, f"Launch failed: {exc}", str(path))
+
