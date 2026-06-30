@@ -86,6 +86,13 @@ def save_profile(profile: dict[str, Any]) -> dict[str, Any]:
     return {**normalized, "_jsonPath": str(path), "_scriptPath": str(script)}
 
 
+def save_profile_only(profile: dict[str, Any]) -> dict[str, Any]:
+    normalized = normalize_profile(profile)
+    path = profile_path(normalized["kind"], normalized["id"])
+    path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {**normalized, "_jsonPath": str(path), "_scriptPath": str(script_path(normalized["kind"], normalized["id"]))}
+
+
 def save_script_and_sync_profile(kind: str, profile_id: str, text: str) -> dict[str, Any]:
     safe_kind = validate_kind(kind)
     safe_id = validate_id(profile_id)

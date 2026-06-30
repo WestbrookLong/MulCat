@@ -6,7 +6,6 @@ import {
   ChevronRight,
   ClipboardCopy,
   Code2,
-  CopyPlus,
   Eye,
   EyeOff,
   FileCode2,
@@ -30,7 +29,7 @@ const claudeProviders = [
     description: "适合 Anthropic 兼容中转，不预设模型环境变量。",
     profileName: "Claude 中转",
     config: {
-      baseUrl: "https://lingsuan.top",
+      baseUrl: "",
       authToken: "",
       claudeConfigDir: "",
       models: { main: "", sonnet: "", opus: "", haiku: "" },
@@ -208,18 +207,19 @@ function App() {
     setConfigOpen(true);
   }
 
-  function duplicateProfile(profile) {
-    const next = clone(profile);
-    const suffix = Date.now().toString().slice(-5);
-    next.id = `${profile.id}-copy-${suffix}`;
-    next.name = `${profile.name} Copy`;
-    setDraft(next);
-    setConfigOpen(true);
-  }
-
   async function saveDraft() {
     if (!draft) return;
     const result = await callApi("save_profile", draft);
+    const saved = result?.profiles?.find((profile) => profile.id === draft.id && profile.kind === draft.kind);
+    if (saved) {
+      setSelectedKey(keyOf(saved));
+      setConfigOpen(false);
+    }
+  }
+
+  async function saveDraftOnly() {
+    if (!draft) return;
+    const result = await callApi("save_profile_only", draft);
     const saved = result?.profiles?.find((profile) => profile.id === draft.id && profile.kind === draft.kind);
     if (saved) {
       setSelectedKey(keyOf(saved));
@@ -321,7 +321,6 @@ function App() {
                     onLaunch={() => callApi("launch_profile", profile.kind, profile.id)}
                     onScript={() => openScript(profile)}
                     onCopyPath={() => copyScriptPath(profile)}
-                    onDuplicate={() => duplicateProfile(profile)}
                   />
                 ))}
               </div>
@@ -345,6 +344,7 @@ function App() {
           chooseDirectory={chooseDirectory}
           onClose={() => setConfigOpen(false)}
           onSave={saveDraft}
+          onSaveOnly={saveDraftOnly}
           onDelete={async () => {
             await callApi("delete_profile", draft.kind, draft.id);
             setConfigOpen(false);
@@ -379,7 +379,7 @@ function ProviderModal({ providers, onSelect, onClose }) {
           >
             <div className="text-sm font-semibold text-white">{provider.name}</div>
             <div className="mt-2 text-xs leading-5 text-zinc-400">{provider.description}</div>
-            <div className="mt-3 font-mono text-[11px] text-zinc-500">{provider.config.baseUrl}</div>
+            <div className="mt-3 font-mono text-[11px] text-zinc-500">{provider.config.baseUrl || "Custom Base URL"}</div>
           </button>
         ))}
       </div>
@@ -443,7 +443,7 @@ function FieldRow({ label, description, value, onChange, placeholder }) {
   );
 }
 
-function ConfigModal({ draft, setDraft, chooseDirectory, onClose, onSave, onDelete }) {
+function ConfigModal({ draft, setDraft, chooseDirectory, onClose, onSave, onSaveOnly, onDelete }) {
   const set = (path, value) => {
     setDraft((current) => {
       const next = clone(current);
@@ -498,7 +498,8 @@ function ConfigModal({ draft, setDraft, chooseDirectory, onClose, onSave, onDele
         </button>
         <div className="flex gap-2">
           <ActionButton icon={X} label="取消" onClick={onClose} />
-          <ActionButton icon={Save} label="保存并生成 PS1" onClick={onSave} primary />
+          <ActionButton icon={Save} label="保存 JSON" onClick={onSaveOnly} />
+          <ActionButton icon={Save} label="保存并同步 PS1" onClick={onSave} primary />
         </div>
       </div>
     </Modal>
@@ -517,7 +518,7 @@ function ScriptModal({ path, text, setText, onClose, onSave, onSaveAndSync }) {
       />
       <div className="mt-4 flex justify-end gap-2 border-t border-zinc-800 pt-4">
         <ActionButton icon={X} label="取消" onClick={onClose} />
-        <ActionButton icon={Save} label="Save PS1 + Sync JSON" onClick={onSaveAndSync} />
+        <ActionButton icon={Save} label="保存并同步 JSON" onClick={onSaveAndSync} />
         <ActionButton icon={Save} label="保存 PS1" onClick={onSave} primary />
       </div>
     </Modal>
@@ -666,7 +667,7 @@ function CodexEditor({ draft, set }) {
   );
 }
 
-function ProfileCard({ profile, active, onSelect, onLaunch, onScript, onCopyPath, onDuplicate }) {
+function ProfileCard({ profile, active, onSelect, onLaunch, onScript, onCopyPath }) {
   const Icon = profile.kind === "claude" ? Bot : TerminalSquare;
   return (
     <article className={`rounded-lg border p-4 transition ${active ? "border-white bg-zinc-900" : "border-zinc-800 bg-black hover:border-zinc-500"}`}>
@@ -683,7 +684,6 @@ function ProfileCard({ profile, active, onSelect, onLaunch, onScript, onCopyPath
         </div>
       </button>
       <div className="mt-4 flex items-center justify-end gap-2 border-t border-zinc-800 pt-3">
-        <SmallIconButton icon={CopyPlus} title="复制配置" onClick={onDuplicate} />
         <SmallIconButton icon={ClipboardCopy} title="Copy PS1 path" onClick={onCopyPath} />
         <SmallIconButton icon={FileCode2} title="编辑 PS1" onClick={onScript} />
         <SmallIconButton icon={Play} title="启动" onClick={onLaunch} strong />

@@ -14,6 +14,7 @@ from profile_manager import (
     launch_profile,
     load_profiles,
     save_profile,
+    save_profile_only,
     save_script_and_sync_profile,
     script_path,
 )
@@ -67,6 +68,17 @@ class DesktopApi:
                 self.last_message = str(exc)
             except Exception as exc:
                 self.last_message = f"Save failed: {exc}"
+            return self._state()
+
+    def save_profile_only(self, profile: dict) -> dict:
+        with self.lock:
+            try:
+                saved = save_profile_only(profile)
+                self.last_message = f"Saved JSON {saved['id']}."
+            except ProfileError as exc:
+                self.last_message = str(exc)
+            except Exception as exc:
+                self.last_message = f"Save JSON failed: {exc}"
             return self._state()
 
     def delete_profile(self, kind: str, profile_id: str) -> dict:
