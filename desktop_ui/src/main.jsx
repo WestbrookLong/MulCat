@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import "./styles.css";
 
-const defaultWorkdir = "D:\\AIWorkspace";
+const defaultWorkdir = "";
 
 const templates = {
   claude: {
@@ -194,7 +194,7 @@ function App() {
                 <TerminalSquare size={17} />
                 MulCat
               </div>
-              <div className="mt-1 font-mono text-[11px] text-zinc-500">JSON to PS1</div>
+              <div className="mt-1 font-mono text-[11px] text-zinc-500">JSON to script</div>
             </div>
 
             <nav className="space-y-1 p-3">
@@ -204,7 +204,7 @@ function App() {
 
             <div className="mt-auto border-t border-zinc-800 p-3">
               <IconButton icon={FolderOpen} label="脚本目录" onClick={() => callApi("open_scripts_dir")} />
-              <IconButton icon={RefreshCw} label="重新生成 PS1" onClick={() => callApi("generate_all")} />
+              <IconButton icon={RefreshCw} label="重新生成脚本" onClick={() => callApi("generate_all")} />
             </div>
           </aside>
 
@@ -320,7 +320,7 @@ function ConfigModal({ draft, setDraft, onClose, onSave, onDelete }) {
         </button>
         <div className="flex gap-2">
           <ActionButton icon={X} label="取消" onClick={onClose} />
-          <ActionButton icon={Save} label="保存并生成 PS1" onClick={onSave} primary />
+          <ActionButton icon={Save} label="保存并生成脚本" onClick={onSave} primary />
         </div>
       </div>
     </Modal>
@@ -329,7 +329,7 @@ function ConfigModal({ draft, setDraft, onClose, onSave, onDelete }) {
 
 function ScriptModal({ path, text, setText, onClose, onSave }) {
   return (
-    <Modal title="直接编辑 PS1" onClose={onClose} wide>
+    <Modal title="直接编辑启动脚本" onClose={onClose} wide>
       <div className="mb-2 truncate font-mono text-[11px] text-zinc-500">{path}</div>
       <textarea
         value={text}
@@ -339,7 +339,7 @@ function ScriptModal({ path, text, setText, onClose, onSave }) {
       />
       <div className="mt-4 flex justify-end gap-2 border-t border-zinc-800 pt-4">
         <ActionButton icon={X} label="取消" onClick={onClose} />
-        <ActionButton icon={Save} label="保存 PS1" onClick={onSave} primary />
+        <ActionButton icon={Save} label="保存脚本" onClick={onSave} primary />
       </div>
     </Modal>
   );
@@ -404,7 +404,7 @@ function ProfileCard({ profile, active, onSelect, onLaunch, onScript, onDuplicat
       </button>
       <div className="mt-4 flex items-center justify-end gap-2 border-t border-zinc-800 pt-3">
         <SmallIconButton icon={CopyPlus} title="复制配置" onClick={onDuplicate} />
-        <SmallIconButton icon={FileCode2} title="编辑 PS1" onClick={onScript} />
+        <SmallIconButton icon={FileCode2} title="编辑启动脚本" onClick={onScript} />
         <SmallIconButton icon={Play} title="启动" onClick={onLaunch} strong />
       </div>
     </article>

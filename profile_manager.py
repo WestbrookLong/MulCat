@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import shutil
 import subprocess
@@ -45,7 +47,22 @@ def profile_path(kind: str, profile_id: str) -> Path:
 def script_path(kind: str, profile_id: str) -> Path:
     safe_kind = validate_kind(kind)
     safe_id = validate_id(profile_id)
-    return SCRIPTS_DIR / safe_kind / f"{safe_id}.ps1"
+    return SCRIPTS_DIR / safe_kind / f"{safe_id}{script_extension()}"
+
+
+def script_extension() -> str:
+    if sys.platform == "darwin":
+        return ".command"
+    return ".ps1"
+
+
+def script_paths(kind: str, profile_id: str) -> list[Path]:
+    safe_kind = validate_kind(kind)
+    safe_id = validate_id(profile_id)
+    return [
+        SCRIPTS_DIR / safe_kind / f"{safe_id}.ps1",
+        SCRIPTS_DIR / safe_kind / f"{safe_id}.command",
+    ]
 
 
 def validate_kind(kind: str) -> str:
@@ -87,7 +104,8 @@ def save_profile(profile: dict[str, Any]) -> dict[str, Any]:
 
 def delete_profile(kind: str, profile_id: str) -> None:
     profile_path(kind, profile_id).unlink(missing_ok=True)
-    script_path(kind, profile_id).unlink(missing_ok=True)
+    for path in script_paths(kind, profile_id):
+        path.unlink(missing_ok=True)
 
 
 def normalize_profile(profile: dict[str, Any]) -> dict[str, Any]:
@@ -165,12 +183,18 @@ def generate_all_scripts() -> list[str]:
 
 def generate_script(profile: dict[str, Any]) -> Path:
     normalized = normalize_profile(profile)
-    if normalized["kind"] == "claude":
+    if sys.platform == "darwin":
+        content = generate_shell_script(normalized)
+    elif normalized["kind"] == "claude":
         content = generate_claude_script(normalized)
     else:
         content = generate_codex_script(normalized)
     path = script_path(normalized["kind"], normalized["id"])
-    path.write_text(content, encoding="utf-8-sig")
+    if sys.platform == "darwin":
+        path.write_text(content, encoding="utf-8")
+        path.chmod(path.stat().st_mode | 0o111)
+    else:
+        path.write_text(content, encoding="utf-8-sig")
     return path
 
 
@@ -233,12 +257,120 @@ def generate_codex_script(profile: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def generate_shell_script(profile: dict[str, Any]) -> str:
+    if profile["kind"] == "claude":
+        return generate_claude_shell_script(profile)
+    return generate_codex_shell_script(profile)
+
+
+def generate_claude_shell_script(profile: dict[str, Any]) -> str:
+    config = profile["config"]
+    env = {
+        "ANTHROPIC_BASE_URL": config["baseUrl"],
+        "ANTHROPIC_AUTH_TOKEN": config["authToken"],
+        "ANTHROPIC_MODEL": config["model"],
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": config["sonnetModel"],
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": config["opusModel"],
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": config["haikuModel"],
+        "API_TIMEOUT_MS": str(config["timeoutMs"]),
+        **{str(k): str(v) for k, v in config.get("extraEnv", {}).items()},
+    }
+    if config["disableNonessentialTraffic"]:
+        env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+    if config["usePowershellTool"]:
+        env["CLAUDE_CODE_USE_POWERSHELL_TOOL"] = "1"
+
+    args = ["--dangerously-skip-permissions"] if config["skipPermissions"] else []
+    args.extend(str(arg) for arg in config.get("extraArgs", []))
+    lines = shell_header(profile)
+    lines.extend(shell_env_lines(env))
+    lines.append(shell_command(["claude", *args]))
+    lines.extend(shell_footer())
+    return "\n".join(lines) + "\n"
+
+
+def generate_codex_shell_script(profile: dict[str, Any]) -> str:
+    config = profile["config"]
+    provider = config["provider"]
+    env = {config["apiKeyEnvName"]: config["apiKey"]}
+    env.update({str(k): str(v) for k, v in config.get("extraEnv", {}).items()})
+
+    provider_id = provider["id"]
+    c_values: dict[str, Any] = {
+        "model_provider": provider_id,
+        "model": config["model"],
+        "model_reasoning_effort": config["reasoningEffort"],
+        "disable_response_storage": config["disableResponseStorage"],
+        "features.apps": config["appsEnabled"],
+        f"model_providers.{provider_id}.name": provider["name"],
+        f"model_providers.{provider_id}.base_url": provider["baseUrl"],
+        f"model_providers.{provider_id}.env_key": config["apiKeyEnvName"],
+        f"model_providers.{provider_id}.wire_api": provider["wireApi"],
+    }
+    c_values.update(config.get("extraConfig", {}))
+
+    parts = ["codex"]
+    if config["ignoreUserConfig"]:
+        parts.append("--ignore-user-config")
+    parts.extend(str(arg) for arg in config.get("extraArgs", []))
+    for key, value in c_values.items():
+        parts.append("-c")
+        parts.append(toml_assignment(key, value))
+
+    lines = shell_header(profile)
+    lines.extend(shell_env_lines(env))
+    lines.append(shell_multiline_command(parts))
+    lines.extend(shell_footer())
+    return "\n".join(lines) + "\n"
+
+
 def script_header(profile: dict[str, Any]) -> list[str]:
     return [
         f"# Generated by MulCat from profiles/{profile['kind']}/{profile['id']}.json",
         "$ErrorActionPreference = 'Stop'",
         f"Set-Location {ps_quote(profile['workingDirectory'])}",
         "",
+    ]
+
+
+def shell_header(profile: dict[str, Any]) -> list[str]:
+    return [
+        "#!/bin/bash",
+        f"# Generated by MulCat from profiles/{profile['kind']}/{profile['id']}.json",
+        f"cd {sh_quote(profile['workingDirectory'])} || exit 1",
+        "",
+    ]
+
+
+def shell_env_lines(env: dict[str, str]) -> list[str]:
+    lines = []
+    for key, value in env.items():
+        if value != "":
+            lines.append(f"export {key}={sh_quote(value)}")
+    lines.append("")
+    return lines
+
+
+def shell_command(parts: list[str]) -> str:
+    return " ".join(sh_quote(part) for part in parts)
+
+
+def shell_multiline_command(parts: list[str]) -> str:
+    rendered = []
+    for index, part in enumerate(parts):
+        suffix = " \\" if index < len(parts) - 1 else ""
+        rendered.append(f"  {sh_quote(part)}{suffix}" if index else f"{sh_quote(part)}{suffix}")
+    return "\n".join(rendered)
+
+
+def shell_footer() -> list[str]:
+    return [
+        "status=$?",
+        "echo",
+        'echo "MulCat command exited with status ${status}."',
+        'echo "Press Return to close this window..."',
+        "read -r _",
+        "exit ${status}",
     ]
 
 
@@ -253,6 +385,10 @@ def env_lines(env: dict[str, str]) -> list[str]:
 
 def ps_quote(value: Any) -> str:
     return "'" + str(value).replace("'", "''") + "'"
+
+
+def sh_quote(value: Any) -> str:
+    return "'" + str(value).replace("'", "'\"'\"'") + "'"
 
 
 def ps_args(args: list[str]) -> str:
@@ -288,36 +424,39 @@ def launch_profile(kind: str, profile_id: str) -> LaunchResult:
         path = generate_script(profile)
 
     try:
-        wt = shutil.which("wt.exe") or shutil.which("wt")
-        if wt:
-            subprocess.Popen(
-                [
-                    wt,
-                    "new-tab",
-                    "powershell.exe",
-                    "-NoExit",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    str(path),
-                ],
-                cwd=str(APP_DIR),
-                close_fds=True,
-            )
+        if sys.platform == "darwin":
+            path.chmod(path.stat().st_mode | 0o111)
+            subprocess.Popen(["open", str(path)], cwd=str(APP_DIR), close_fds=True)
         else:
-            subprocess.Popen(
-                [
-                    "powershell.exe",
-                    "-NoExit",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    str(path),
-                ],
-                cwd=str(APP_DIR),
-                close_fds=True,
-            )
+            wt = shutil.which("wt.exe") or shutil.which("wt")
+            if wt:
+                subprocess.Popen(
+                    [
+                        wt,
+                        "new-tab",
+                        "powershell.exe",
+                        "-NoExit",
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-File",
+                        str(path),
+                    ],
+                    cwd=str(APP_DIR),
+                    close_fds=True,
+                )
+            else:
+                subprocess.Popen(
+                    [
+                        "powershell.exe",
+                        "-NoExit",
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-File",
+                        str(path),
+                    ],
+                    cwd=str(APP_DIR),
+                    close_fds=True,
+                )
         return LaunchResult(True, f"Launched {profile_id}.", str(path))
     except Exception as exc:
         return LaunchResult(False, f"Launch failed: {exc}", str(path))
-

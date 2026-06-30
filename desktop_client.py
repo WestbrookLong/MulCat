@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import os
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -104,7 +107,11 @@ class DesktopApi:
             try:
                 path = script_path(kind, profile_id)
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(str(text), encoding="utf-8-sig")
+                if sys.platform == "darwin":
+                    path.write_text(str(text), encoding="utf-8")
+                    path.chmod(path.stat().st_mode | 0o111)
+                else:
+                    path.write_text(str(text), encoding="utf-8-sig")
                 self.last_message = f"Saved script {profile_id}."
             except Exception as exc:
                 self.last_message = f"Save script failed: {exc}"
@@ -117,7 +124,12 @@ class DesktopApi:
             return self._state()
 
     def open_scripts_dir(self) -> dict:
-        os.startfile(str(SCRIPTS_DIR))
+        if sys.platform == "win32":
+            os.startfile(str(SCRIPTS_DIR))
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(SCRIPTS_DIR)], close_fds=True)
+        else:
+            subprocess.Popen(["xdg-open", str(SCRIPTS_DIR)], close_fds=True)
         return self._state()
 
     def minimize_window(self) -> dict:
@@ -147,8 +159,6 @@ class DesktopApi:
 
 
 def main() -> None:
-    if sys.platform != "win32":
-        raise SystemExit("MulCat is currently implemented for Windows.")
     api = DesktopApi()
     window = webview.create_window(
         "MulCat",
@@ -164,7 +174,12 @@ def main() -> None:
         background_color="#000000",
     )
     api._window = window
-    webview.start(gui="edgechromium", debug=False)
+    if sys.platform == "win32":
+        webview.start(gui="edgechromium", debug=False)
+    elif sys.platform == "darwin":
+        webview.start(gui="cocoa", debug=False)
+    else:
+        webview.start(debug=False)
 
 
 if __name__ == "__main__":
