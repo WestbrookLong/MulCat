@@ -159,13 +159,29 @@ codex
 
 请先安装：
 
-- Windows
+- Windows 或 macOS
 - Python 3.10 或更高版本
 - Node.js 18 或更高版本
 - Windows Terminal，推荐安装
+- PowerShell 7，macOS 端启动 profile 时需要 `pwsh`
 - 已安装并可在命令行中运行的 `claude` 或 `codex`
 
+## 项目结构
+
+MulCat 现在按 UI、共享逻辑、平台适配分层：
+
+```text
+desktop_ui/       React UI，只通过 pywebview API 调后端
+mulcat_core/      共享业务逻辑：配置读写、脚本生成、脚本解析、桌面 API 桥
+windows/          Windows 启动方式和无法跨平台共用的适配代码
+mac/              macOS 启动方式和无法跨平台共用的适配代码
+```
+
+Windows 和 macOS 共用 `mulcat_core/` 中的 profile/schema/script 逻辑。平台目录只放窗口启动、剪贴板、打开目录、终端拉起这类系统差异代码。
+
 ## 从源码运行
+
+Windows：
 
 ```powershell
 cd D:\path\to\MulCat
@@ -176,13 +192,34 @@ npm install
 npm run build
 cd ..
 
-python desktop_client.py
+python -m windows.main
 ```
 
 也可以运行：
 
 ```powershell
-.\start_desktop_client.bat
+.\windows\start_desktop_client.bat
+```
+
+macOS：
+
+```bash
+cd /path/to/MulCat
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+
+cd desktop_ui
+npm install
+npm run build
+cd ..
+
+.venv/bin/python -m mac.main
+```
+
+也可以运行：
+
+```bash
+./mac/start_desktop_client.command
 ```
 
 仓库同时提供了 `requirement.txt` 作为兼容文件，内容与 `requirements.txt` 一致。
@@ -196,12 +233,22 @@ cd desktop_ui
 npm run dev
 ```
 
-然后在另一个 PowerShell 中运行：
+然后在另一个终端中运行桌面壳。
+
+Windows：
 
 ```powershell
 cd D:\path\to\MulCat
 $env:MULCAT_UI_DEV_URL = "http://127.0.0.1:5173"
-python desktop_client.py
+python -m windows.main
+```
+
+macOS：
+
+```bash
+cd /path/to/MulCat
+export MULCAT_UI_DEV_URL="http://127.0.0.1:5173"
+.venv/bin/python -m mac.main
 ```
 
 ## 打包说明
@@ -210,13 +257,26 @@ python desktop_client.py
 
 开发者如果需要自行打包，需要先构建前端，再使用 PyInstaller：
 
+Windows：
+
 ```powershell
 cd desktop_ui
 npm install
 npm run build
 cd ..
 
-pyinstaller --noconfirm --clean --windowed --name MulCat --add-data "desktop_ui/dist;desktop_ui/dist" desktop_client.py
+pyinstaller --noconfirm --clean --windowed --name MulCat --add-data "desktop_ui/dist;desktop_ui/dist" windows/main.py
+```
+
+macOS：
+
+```bash
+cd desktop_ui
+npm install
+npm run build
+cd ..
+
+pyinstaller --noconfirm --clean --windowed --name MulCat --add-data "desktop_ui/dist:desktop_ui/dist" mac/main.py
 ```
 
 打包结果会出现在：
